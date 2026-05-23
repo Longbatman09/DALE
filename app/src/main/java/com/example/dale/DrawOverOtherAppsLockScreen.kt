@@ -6,17 +6,22 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.OnBackPressedCallback
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -29,9 +34,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -40,8 +48,10 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.example.dale.ui.theme.DALETheme
+import com.example.dale.utils.performKeypadHaptic
 import com.example.dale.utils.SharedPreferencesManager
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -58,6 +68,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     private var isBiometricOnlyForTarget = false
     private var biometricTriggeredOnce = false
     private var isBiometricPromptShowing = false
+    private var isUninstallFlow = false
 
     private var biometricPrompt: BiometricPrompt? = null
     private var biometricPromptInfo: BiometricPrompt.PromptInfo? = null
@@ -67,10 +78,24 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Consume system back; only top-left arrow should dismiss.
+        // Handle system back: allow exiting the lock screen.
+        // - Normal flow: behave like the top-left arrow (dismiss to home)
+        // - Uninstall flow: finish the activity so the system uninstall dialog can continue
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                // no-op
+                try {
+                    if (isUninstallFlow) {
+                        // In uninstall flow we allow the back button to close the lock screen
+                        // so the uninstall UI can proceed.
+                        finishAndRemoveTask()
+                    } else {
+                        // Default dismiss behavior (records closed app and goes home)
+                        dismissToHome()
+                    }
+                } catch (e: Exception) {
+                    // Fallback: ensure activity finishes if anything unexpected occurs
+                    finishAndRemoveTask()
+                }
             }
         })
 
@@ -107,6 +132,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
                         groupId = groupId,
                         canUseBiometric = canUseBiometricForTarget,
                         biometricOnly = isBiometricOnlyForTarget && canUseBiometricForTarget,
+                        isUninstallFlow = isUninstallFlow,
                         onBiometricRequested = { triggerBiometricPrompt() },
                         onUnlockSuccess = { unlockApp(it) },
                         onUnlockFail = { /* Handle fail */ },
@@ -131,6 +157,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     private fun updateTargetState(intent: Intent?) {
         targetPackageName = intent?.getStringExtra("TARGET_PACKAGE")
         groupId = intent?.getStringExtra("GROUP_ID")
+        isUninstallFlow = intent?.getBooleanExtra("IS_UNINSTALL_FLOW", false) == true
         biometricTriggeredOnce = false
     }
 
@@ -238,6 +265,11 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     }
 
     private fun unlockApp(packageName: String) {
+        if (isUninstallFlow) {
+            completeUninstallVerification(packageName)
+            return
+        }
+
         // Mark PIN as verified before unlocking
         isPinVerified = true
 
@@ -280,6 +312,20 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
 
             finishAndRemoveTask()
         }, if (isCrossUnlock) 320 else 250)
+    }
+
+    private fun completeUninstallVerification(packageName: String) {
+        isPinVerified = true
+
+        sendBroadcast(Intent(AppMonitorService.ACTION_UNINSTALL_AUTH_GRANTED).apply {
+            setPackage(this@DrawOverOtherAppsLockScreen.packageName)
+            putExtra("TARGET_PACKAGE", packageName)
+            putExtra("GROUP_ID", groupId)
+        })
+
+        Toast.makeText(applicationContext, "Uninstall within a minute", Toast.LENGTH_SHORT).show()
+        DALEAppLockManager.isLockScreenShown.set(false)
+        finishAndRemoveTask()
     }
 
     private fun closeSourceAppBeforeCrossUnlock(sourcePackage: String, groupId: String?) {
@@ -378,6 +424,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     }
 
     private fun dismissToHome() {
+        if (isUninstallFlow) return
         if (isFinishing || isDismissing || isPinVerified) return
         isDismissing = true
         relaunchHandler.removeCallbacksAndMessages(null)
@@ -426,6 +473,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
             addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
             putExtra("TARGET_PACKAGE", targetPackageName)
             putExtra("GROUP_ID", groupId)
+            putExtra("IS_UNINSTALL_FLOW", isUninstallFlow)
         }
         startActivity(intent)
     }
@@ -450,6 +498,7 @@ fun LockScreenContent(
     groupId: String?,
     canUseBiometric: Boolean,
     biometricOnly: Boolean,
+    isUninstallFlow: Boolean = false,
     onBiometricRequested: () -> Unit,
     onUnlockSuccess: (String) -> Unit,
     onUnlockFail: () -> Unit,
@@ -462,6 +511,13 @@ fun LockScreenContent(
     var credentialInput by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isVerifying by remember { mutableStateOf(false) }
+    var isClearingPin by remember { mutableStateOf(false) }
+    var pinDotsAlphaTarget by remember { mutableStateOf(1f) }
+    val pinDotsAlpha by animateFloatAsState(
+        targetValue = pinDotsAlphaTarget,
+        animationSpec = tween(180),
+        label = "LockPinDotsAlpha"
+    )
     val scope = rememberCoroutineScope()
 
     val appGroup = remember(groupId) {
@@ -479,14 +535,23 @@ fun LockScreenContent(
         }
     }
 
+    val targetAppName = remember(appGroup, targetPackageName) {
+        when {
+            appGroup == null -> "this app"
+            targetPackageName == appGroup.app1PackageName -> appGroup.app1Name.ifBlank { appGroup.app1PackageName }
+            targetPackageName == appGroup.app2PackageName -> appGroup.app2Name.ifBlank { appGroup.app2PackageName }
+            else -> targetPackageName ?: "this app"
+        }
+    }
+
     val normalizedLockType = appInfo.lockType.uppercase()
     val isPatternMode = normalizedLockType == "PATTERN"
     val isPinMode = normalizedLockType == "PIN"
     val expectedPinLength = (if (appInfo.pinLength > 0) appInfo.pinLength else 4).coerceIn(1, 10)
+    val hapticIntensity = (appGroup?.vibrationIntensity ?: 100).coerceIn(0, 100)
 
     suspend fun verifyAndUnlock(inputCredential: String) {
         if (isVerifying) return
-        if (isPatternMode && inputCredential.length < 4) return
         if (isPinMode && appInfo.pinLength > 0 && inputCredential.length != appInfo.pinLength) return
         if (isPinMode && appInfo.pinLength == 0 && inputCredential.length < 4) return  // Fallback for legacy PINs
         if (!isPinMode && !isPatternMode && inputCredential.length < 6) return
@@ -506,41 +571,45 @@ fun LockScreenContent(
             return
         }
 
-        val otherAppHash = when (appInfo.appPackage) {
-            appGroup?.app1PackageName -> appGroup.app2LockPin
-            appGroup?.app2PackageName -> appGroup.app1LockPin
-            else -> null
-        }
-        val otherAppType = when (appInfo.appPackage) {
-            appGroup?.app1PackageName -> appGroup.app2LockType
-            appGroup?.app2PackageName -> appGroup.app1LockType
-            else -> null
-        }
-        val otherAppPackage = when (appInfo.appPackage) {
-            appGroup?.app1PackageName -> appGroup.app2PackageName
-            appGroup?.app2PackageName -> appGroup.app1PackageName
-            else -> null
+        if (!isUninstallFlow) {
+            val otherAppHash = when (appInfo.appPackage) {
+                appGroup?.app1PackageName -> appGroup.app2LockPin
+                appGroup?.app2PackageName -> appGroup.app1LockPin
+                else -> null
+            }
+            val otherAppType = when (appInfo.appPackage) {
+                appGroup?.app1PackageName -> appGroup.app2LockType
+                appGroup?.app2PackageName -> appGroup.app1LockType
+                else -> null
+            }
+            val otherAppPackage = when (appInfo.appPackage) {
+                appGroup?.app1PackageName -> appGroup.app2PackageName
+                appGroup?.app2PackageName -> appGroup.app1PackageName
+                else -> null
+            }
+
+            if (
+                otherAppHash != null &&
+                otherAppPackage != null &&
+                otherAppType?.uppercase() == appInfo.lockType.uppercase() &&
+                hashedInput == otherAppHash
+            ) {
+                errorMessage = null
+                onVerified()
+                onUnlockSuccess(otherAppPackage)
+                isVerifying = false
+                return
+            }
         }
 
-        if (
-            otherAppHash != null &&
-            otherAppPackage != null &&
-            otherAppType?.uppercase() == appInfo.lockType.uppercase() &&
-            hashedInput == otherAppHash
-        ) {
-            errorMessage = null
-            onVerified()
-            onUnlockSuccess(otherAppPackage)
-        } else {
-            errorMessage = when {
-                isPatternMode -> "Incorrect pattern"
-                isPinMode -> "Incorrect PIN"
-                else -> "Incorrect password"
-            }
-            delay(420)
-            credentialInput = ""
-            onUnlockFail()
+        errorMessage = when {
+            isPatternMode -> "Incorrect pattern"
+            isPinMode -> "Incorrect PIN"
+            else -> "Incorrect password"
         }
+        delay(420)
+        credentialInput = ""
+        onUnlockFail()
 
         isVerifying = false
     }
@@ -574,12 +643,14 @@ fun LockScreenContent(
                 .zIndex(2f),
             horizontalArrangement = Arrangement.Start
         ) {
-            IconButton(onClick = onDismissRequested) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = Color.White
-                )
+            if (!isUninstallFlow) {
+                IconButton(onClick = onDismissRequested) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
             }
         }
 
@@ -621,6 +692,7 @@ fun LockScreenContent(
 
                     Text(
                         text = when {
+                            isUninstallFlow -> "Authenticate to uninstall"
                             isPatternMode -> "Draw Pattern"
                             isPinMode -> "Enter PIN"
                             else -> "Enter Password"
@@ -631,7 +703,11 @@ fun LockScreenContent(
                     )
 
                     Text(
-                        text = "Authenticate to continue",
+                        text = if (isUninstallFlow) {
+                            "$targetAppName requires your credentials"
+                        } else {
+                            "Authenticate to continue"
+                        },
                         fontSize = 13.sp,
                         color = Color(0xFF9FB2CC),
                         modifier = Modifier.padding(top = 4.dp)
@@ -659,6 +735,7 @@ fun LockScreenContent(
                     } else if (isPinMode) {
                         Row(
                             modifier = Modifier
+                                .alpha(pinDotsAlpha)
                                 .fillMaxWidth()
                                 .padding(top = 20.dp, bottom = 12.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
@@ -694,6 +771,7 @@ fun LockScreenContent(
                                     .fillMaxSize()
                                     .padding(16.dp),
                                 enabled = !isVerifying,
+                                hapticIntensity = hapticIntensity,
                                 onPatternDrawn = { patternValue ->
                                     if (!isVerifying) {
                                         errorMessage = null
@@ -704,7 +782,7 @@ fun LockScreenContent(
                         }
 
                         Text(
-                            text = "Connect at least 4 dots",
+                            text = "Draw a pattern",
                             color = Color(0xFF9FB2CC),
                             fontSize = 12.sp,
                             modifier = Modifier.padding(top = 10.dp)
@@ -799,12 +877,13 @@ fun LockScreenContent(
                                 NumberButton(
                                     number = number.toString(),
                                     onClick = {
-                                        if (credentialInput.length < expectedPinLength && !isVerifying) {
+                                        if (!isClearingPin && credentialInput.length < expectedPinLength && !isVerifying) {
                                             credentialInput += number
                                             errorMessage = null
                                         }
                                     },
-                                    enabled = !isVerifying
+                                    enabled = !isVerifying,
+                                    hapticIntensity = hapticIntensity
                                 )
                             }
                         }
@@ -819,23 +898,39 @@ fun LockScreenContent(
                         NumberButton(
                             number = "0",
                             onClick = {
-                                if (credentialInput.length < expectedPinLength && !isVerifying) {
+                                if (!isClearingPin && credentialInput.length < expectedPinLength && !isVerifying) {
                                     credentialInput += "0"
                                     errorMessage = null
                                 }
                             },
-                            enabled = !isVerifying
+                            enabled = !isVerifying,
+                            hapticIntensity = hapticIntensity
                         )
 
                         NumberButton(
                             number = "⌫",
                             onClick = {
-                                if (credentialInput.isNotEmpty() && !isVerifying) {
+                                if (!isClearingPin && credentialInput.isNotEmpty() && !isVerifying) {
                                     credentialInput = credentialInput.dropLast(1)
                                     errorMessage = null
                                 }
                             },
-                            enabled = !isVerifying
+                            onLongClick = {
+                                if (!isClearingPin && credentialInput.isNotEmpty() && !isVerifying) {
+                                    isClearingPin = true
+                                    pinDotsAlphaTarget = 0f
+                                    scope.launch {
+                                        delay(140)
+                                        credentialInput = ""
+                                        errorMessage = null
+                                        pinDotsAlphaTarget = 1f
+                                        delay(120)
+                                        isClearingPin = false
+                                    }
+                                }
+                            },
+                            enabled = !isVerifying,
+                            hapticIntensity = hapticIntensity
                         )
                     }
                 }
@@ -857,31 +952,49 @@ fun LockScreenContent(
  fun NumberButton(
     number: String,
     onClick: () -> Unit,
-    enabled: Boolean = true
+    onLongClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
+    hapticIntensity: Int = 100
  ) {
-    Button(
-        onClick = onClick,
+    val context = LocalContext.current
+    Box(
         modifier = Modifier
-              .size(76.dp)
-              .padding(6.dp)
+            .size(76.dp)
+            .padding(6.dp)
             .shadow(
-                  elevation = if (enabled) 3.dp else 0.dp,
-                  shape = CircleShape
-            ),
-        enabled = enabled,
-          shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(
-              containerColor = Color(0xFF0F315C),
-              disabledContainerColor = Color(0xFF0A213F)
-        ),
-        contentPadding = PaddingValues(0.dp)
+                elevation = if (enabled) 3.dp else 0.dp,
+                shape = CircleShape
+            )
+            .background(
+                if (enabled) Color(0xFF0F315C) else Color(0xFF0A213F),
+                shape = CircleShape
+            )
+            .pointerInput(enabled, onLongClick) {
+                if (enabled) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val releasedBeforeTimeout = withTimeoutOrNull(500) {
+                            waitForUpOrCancellation() != null
+                        } == true
+
+                        if (releasedBeforeTimeout) {
+                            performKeypadHaptic(context, intensityPercent = hapticIntensity)
+                            onClick()
+                        } else if (onLongClick != null) {
+                            performKeypadHaptic(context, intensityPercent = 60)
+                            onLongClick()
+                            waitForUpOrCancellation()
+                        }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = number,
-              fontSize = 22.sp,
-              fontWeight = FontWeight.SemiBold,
-              color = if (enabled) Color.White else Color(0xFF6D7B8F)
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) Color.White else Color(0xFF6D7B8F)
         )
     }
  }
-

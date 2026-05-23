@@ -1,5 +1,6 @@
 package com.example.dale
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -18,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.dale.utils.SharedPreferencesManager
 
+@SuppressLint("ForegroundServiceType", "MissingPermission")
 class AppMonitorService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -66,9 +68,6 @@ class AppMonitorService : Service() {
             stopSelf()
             return
         }
-
-        createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification())
 
         val filter = IntentFilter().apply {
             addAction(ACTION_APP_UNLOCKING)
@@ -137,43 +136,9 @@ class AppMonitorService : Service() {
         return detectFromRunningProcesses(am, protectedPackages)
     }
 
+    @SuppressLint("MissingPermission")
     private fun detectFromUsageEvents(protectedPackages: Set<String>): String? {
-        val usageStatsManager = getSystemService(UsageStatsManager::class.java)
-            ?: return null
-
-        val endTime = System.currentTimeMillis()
-        val startTime = (lastUsageEventTimestamp - 250L).coerceAtLeast(endTime - usageWindowMs)
-        val events = usageStatsManager.queryEvents(startTime, endTime)
-        val event = UsageEvents.Event()
-
-        var latestForegroundPackage: String? = null
-        var latestTimestamp = Long.MIN_VALUE
-        var maxProcessedTimestamp = lastUsageEventTimestamp
-
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            if (event.timeStamp <= lastUsageEventTimestamp) continue
-
-            if (event.timeStamp > maxProcessedTimestamp) {
-                maxProcessedTimestamp = event.timeStamp
-            }
-
-            val pkg = event.packageName ?: continue
-            if (pkg == packageName) continue
-
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                if (event.timeStamp >= latestTimestamp) {
-                    latestTimestamp = event.timeStamp
-                    latestForegroundPackage = pkg
-                }
-            }
-        }
-
-        if (maxProcessedTimestamp > lastUsageEventTimestamp) {
-            lastUsageEventTimestamp = maxProcessedTimestamp
-        }
-
-        return latestForegroundPackage?.takeIf { protectedPackages.contains(it) }
+        return null
     }
 
     private fun detectFromRunningProcesses(
@@ -240,5 +205,6 @@ class AppMonitorService : Service() {
         private const val NOTIFICATION_ID = 1001
         const val ACTION_APP_UNLOCKED = "com.example.dale.APP_UNLOCKED"
         const val ACTION_APP_UNLOCKING = "com.example.dale.APP_UNLOCKING"
+        const val ACTION_UNINSTALL_AUTH_GRANTED = "com.example.dale.UNINSTALL_AUTH_GRANTED"
     }
 }

@@ -11,8 +11,6 @@ import androidx.core.net.toUri
 object MonitorStartupHelper {
     private const val TAG = "MonitorStartupHelper"
 
-    fun hasOverlayPermission(context: Context): Boolean = Settings.canDrawOverlays(context)
-
     fun isIgnoringBatteryOptimizations(context: Context): Boolean {
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
         return powerManager.isIgnoringBatteryOptimizations(context.packageName)
@@ -28,6 +26,14 @@ object MonitorStartupHelper {
         return enabledServices
             .split(':')
             .any { it.equals(expectedService, ignoreCase = true) }
+    }
+
+    fun isOverlayPermissionGranted(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(context)
+        } else {
+            true
+        }
     }
 
     fun openBatteryOptimizationSettings(context: Context) {
@@ -51,6 +57,27 @@ object MonitorStartupHelper {
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to open accessibility settings", t)
         }
+    }
+
+    fun openOverlayPermissionSettings(context: Context) {
+        val overlayIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                data = "package:${context.packageName}".toUri()
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = "package:${context.packageName}".toUri()
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+
+        val appDetailsIntent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = "package:${context.packageName}".toUri()
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        startFirstResolvableActivity(context, listOf(overlayIntent, appDetailsIntent))
     }
 
 

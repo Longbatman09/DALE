@@ -57,8 +57,43 @@ fun ActivityLogsScreen(
     activity: ComponentActivity
 ) {
     val sharedPrefs = SharedPreferencesManager.getInstance(activity)
+    val appGroup = remember(groupId) {
+        sharedPrefs.getAppGroup(groupId) ?: sharedPrefs.getPendingAppGroup(groupId)
+    }
+    val app1Name = appGroup?.app1Name?.ifBlank { "App 1" } ?: "App 1"
+    val app2Name = appGroup?.app2Name?.ifBlank { "App 2" } ?: "App 2"
+    val app1Package = appGroup?.app1PackageName?.takeIf { it.isNotBlank() }
+    val app2Package = appGroup?.app2PackageName?.takeIf { it.isNotBlank() }
     val logs: List<ActivityLogEntry> = remember(groupId) {
         sharedPrefs.getActivityLogs(groupId)
+    }
+    val tabTitles = listOf("ALL", app1Name, app2Name)
+    var selectedTab by remember { mutableStateOf(0) }
+    val filteredLogs = remember(
+        logs,
+        selectedTab,
+        app1Package,
+        app2Package,
+        app1Name,
+        app2Name
+    ) {
+        when (selectedTab) {
+            1 -> {
+                if (app1Package != null) {
+                    logs.filter { it.packageName == app1Package }
+                } else {
+                    logs.filter { it.appName == app1Name }
+                }
+            }
+            2 -> {
+                if (app2Package != null) {
+                    logs.filter { it.packageName == app2Package }
+                } else {
+                    logs.filter { it.appName == app2Name }
+                }
+            }
+            else -> logs
+        }
     }
 
     Box(
@@ -106,7 +141,26 @@ fun ActivityLogsScreen(
                 }
             }
 
-            if (logs.isEmpty()) {
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Color(0xFF0f3460),
+                contentColor = Color.White
+            ) {
+                tabTitles.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                text = title,
+                                maxLines = 1
+                            )
+                        }
+                    )
+                }
+            }
+
+            if (filteredLogs.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -115,13 +169,17 @@ fun ActivityLogsScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            text = "No activity logs yet",
+                            text = if (logs.isEmpty()) "No activity logs yet" else "No activity logs for this app",
                             fontSize = 16.sp,
                             color = Color.Gray,
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = "App open/close events will appear here",
+                            text = if (logs.isEmpty()) {
+                                "App open/close events will appear here"
+                            } else {
+                                "App open/close events will appear here for the selected app"
+                            },
                             fontSize = 12.sp,
                             color = Color.DarkGray,
                             modifier = Modifier.padding(top = 6.dp)
@@ -135,7 +193,7 @@ fun ActivityLogsScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    itemsIndexed(items = logs, key = { index, log ->
+                    itemsIndexed(items = filteredLogs, key = { index, log ->
                         "${log.timestamp}-${log.packageName}-${log.event}-$index"
                     }) { _, log ->
                         ActivityLogItem(log)

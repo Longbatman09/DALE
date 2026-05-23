@@ -16,7 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.IntSize
+import com.example.dale.utils.performKeypadHaptic
 import kotlin.math.hypot
 
 private data class PatternNode(val id: Int, val center: Offset)
@@ -25,11 +27,13 @@ private data class PatternNode(val id: Int, val center: Offset)
 fun PatternLockPad(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    hapticIntensity: Int = 100,
     onPatternDrawn: (String) -> Unit
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val connectedNodes = remember { mutableStateListOf<PatternNode>() }
     var dragPoint by remember { mutableStateOf<Offset?>(null) }
+    val context = LocalContext.current
 
     Box(
         modifier = modifier
@@ -43,7 +47,15 @@ fun PatternLockPad(
 
                         val nodes = buildPatternNodes(canvasSize)
                         val hitRadius = hitRadius(canvasSize)
-                        addNodeIfHit(connectedNodes, nodes, startOffset, hitRadius)
+                        addNodeIfHit(
+                            connectedNodes,
+                            nodes,
+                            startOffset,
+                            hitRadius,
+                            onNodeAdded = {
+                                performKeypadHaptic(context, intensityPercent = hapticIntensity)
+                            }
+                        )
                     },
                     onDragEnd = {
                         dragPoint = null
@@ -61,7 +73,15 @@ fun PatternLockPad(
                     val hitRadius = hitRadius(canvasSize)
 
                     dragPoint = change.position
-                    addNodeIfHit(connectedNodes, nodes, change.position, hitRadius)
+                    addNodeIfHit(
+                        connectedNodes,
+                        nodes,
+                        change.position,
+                        hitRadius,
+                        onNodeAdded = {
+                            performKeypadHaptic(context, intensityPercent = hapticIntensity)
+                        }
+                    )
                 }
             }
     ) {
@@ -75,7 +95,7 @@ fun PatternLockPad(
                     color = Color(0xFF9575CD),
                     start = from.center,
                     end = to.center,
-                    strokeWidth = nodeRadius * 0.72f,
+                    strokeWidth = nodeRadius * 0.45f,
                     cap = StrokeCap.Round
                 )
             }
@@ -87,7 +107,7 @@ fun PatternLockPad(
                     color = Color(0xAA9575CD),
                     start = lastConnected.center,
                     end = currentDrag,
-                    strokeWidth = nodeRadius * 0.56f,
+                    strokeWidth = nodeRadius * 0.35f,
                     cap = StrokeCap.Round
                 )
             }
@@ -115,15 +135,51 @@ private fun addNodeIfHit(
     connectedNodes: MutableList<PatternNode>,
     nodes: List<PatternNode>,
     touch: Offset,
-    hitRadius: Float
+    hitRadius: Float,
+    onNodeAdded: (PatternNode) -> Unit
 ) {
     val candidate = nodes.firstOrNull { node ->
         distance(node.center, touch) <= hitRadius
     } ?: return
 
     if (connectedNodes.none { it.id == candidate.id }) {
+        val lastConnected = connectedNodes.lastOrNull()
+        if (lastConnected != null) {
+            val intermediate = findIntermediateNode(lastConnected, candidate, nodes)
+            if (intermediate != null && connectedNodes.none { it.id == intermediate.id }) {
+                connectedNodes.add(intermediate)
+                onNodeAdded(intermediate)
+            }
+        }
         connectedNodes.add(candidate)
+        onNodeAdded(candidate)
     }
+}
+
+private fun findIntermediateNode(
+    from: PatternNode,
+    to: PatternNode,
+    nodes: List<PatternNode>
+): PatternNode? {
+    val fromRow = (from.id - 1) / 3
+    val fromCol = (from.id - 1) % 3
+    val toRow = (to.id - 1) / 3
+    val toCol = (to.id - 1) % 3
+    val rowDelta = toRow - fromRow
+    val colDelta = toCol - fromCol
+
+    val isStraight = rowDelta == 0 && kotlin.math.abs(colDelta) == 2 ||
+        colDelta == 0 && kotlin.math.abs(rowDelta) == 2
+    val isDiagonal = kotlin.math.abs(rowDelta) == 2 && kotlin.math.abs(colDelta) == 2
+
+    if (!isStraight && !isDiagonal) {
+        return null
+    }
+
+    val midRow = (fromRow + toRow) / 2
+    val midCol = (fromCol + toCol) / 2
+    val midId = midRow * 3 + midCol + 1
+    return nodes.firstOrNull { it.id == midId }
 }
 
 private fun buildPatternNodes(size: IntSize): List<PatternNode> {

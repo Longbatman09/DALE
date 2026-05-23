@@ -2,20 +2,19 @@ package com.example.dale
 
 import android.content.Intent
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.launch
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,9 +23,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -40,26 +39,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
 import com.example.dale.ui.theme.DALETheme
 import com.example.dale.ui.theme.Purple40
+import com.example.dale.utils.performKeypadHaptic
 import com.example.dale.utils.MonitorStartupHelper
 import com.example.dale.utils.SharedPreferencesManager
 import java.security.MessageDigest
@@ -69,18 +73,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.launch
 
 class PasswordSetupActivity : ComponentActivity() {
     private var groupId: String = ""
-    private var overlayPermissionRequested = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         groupId = intent.getStringExtra("groupId") ?: ""
-        // directly query overlay permission (project minSdk >= M)
-        val overlayAllowed = Settings.canDrawOverlays(this)
 
         setContent {
             DALETheme {
@@ -88,31 +91,10 @@ class PasswordSetupActivity : ComponentActivity() {
                     PasswordSetupScreen(
                         modifier = Modifier.padding(innerPadding),
                         groupId = groupId,
-                        activity = this,
-                        overlayAllowedInitial = overlayAllowed
+                        activity = this
                     )
                 }
             }
-        }
-
-        // Monitor overlay permission status changes
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                if (overlayPermissionRequested && Settings.canDrawOverlays(this@PasswordSetupActivity)) {
-                    // Permission was granted after returning from settings
-                    completePasswordSetup(groupId)
-                    overlayPermissionRequested = false
-                }
-            }
-        }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        // Check if permission was granted after returning from settings
-        if (overlayPermissionRequested && Settings.canDrawOverlays(this) ) {
-            completePasswordSetup(groupId)
-            overlayPermissionRequested = false
         }
     }
 
@@ -207,21 +189,6 @@ class PasswordSetupActivity : ComponentActivity() {
         }
     }
 
-    fun proceedToOverlayPermission(groupId: String) {
-        // Request overlay permission if not already granted
-        if (!Settings.canDrawOverlays(this)) {
-            overlayPermissionRequested = true
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                "package:$packageName".toUri()
-            )
-            startActivity(intent)
-        } else {
-            // Permission already granted, complete setup immediately
-            completePasswordSetup(groupId)
-        }
-    }
-
     fun completePasswordSetup(groupId: String) {
         val sharedPrefsManager = SharedPreferencesManager.getInstance(this)
         val appGroup = sharedPrefsManager.getAppGroupForSetup(groupId)
@@ -267,13 +234,10 @@ class PasswordSetupActivity : ComponentActivity() {
 fun PasswordSetupScreen(
     modifier: Modifier = Modifier,
     groupId: String = "",
-    activity: ComponentActivity? = null,
-    overlayAllowedInitial: Boolean = true
+    activity: ComponentActivity? = null
 ) {
     val selectedAuthType = remember { mutableStateOf<String?>(null) }
     val targetAppIndex = remember { mutableStateOf(1) } // 1 or 2
-    val showOverlayDialog = remember { mutableStateOf(false) }
-    val overlayAllowed = remember { mutableStateOf(overlayAllowedInitial) }
     val showBiometricAppsDialog = remember { mutableStateOf(false) }
     val showBiometricBackupDialog = remember { mutableStateOf(false) }
     val showBiometricBackupPinDialog = remember { mutableStateOf<Int?>(null) }
@@ -313,11 +277,7 @@ fun PasswordSetupScreen(
             app1BackupPin = app1BackupPin.value,
             app2BackupPin = app2BackupPin.value
         )
-        if (!overlayAllowed.value) {
-            showOverlayDialog.value = true
-        } else {
-            (activity as? PasswordSetupActivity)?.proceedToOverlayPermission(groupId)
-        }
+        (activity as? PasswordSetupActivity)?.completePasswordSetup(groupId)
     }
 
     // resetKey forces PinEntryScreen recomposition when changed
@@ -336,6 +296,7 @@ fun PasswordSetupScreen(
         if (group.app2Name.isNotEmpty()) app2Name.value = group.app2Name
         if (group.groupName.isNotEmpty()) groupName.value = group.groupName
     }
+    val hapticIntensity = (appGroup.value?.vibrationIntensity ?: 100).coerceIn(0, 100)
     
     val isSelectingAuth = selectedAuthType.value == null
     val navigateBackToGroupName: () -> Unit = {
@@ -436,6 +397,7 @@ fun PasswordSetupScreen(
                             appIndex = targetAppIndex.value,
                             app1PinLength = app1PinLength.value,
                             groupCreatedName = groupName.value,
+                            hapticIntensity = hapticIntensity,
                             onCredentialConfirmed = { credential ->
                                 val authType = selectedAuthType.value ?: "PIN"
                                 
@@ -508,12 +470,7 @@ fun PasswordSetupScreen(
                                             app2RawCredential = app2Credential.value ?: ""
                                         )
 
-                                        // Proceed to overlay permission
-                                        if (!overlayAllowed.value) {
-                                            showOverlayDialog.value = true
-                                        } else {
-                                            (activity as? PasswordSetupActivity)?.proceedToOverlayPermission(groupId)
-                                        }
+                                        (activity as? PasswordSetupActivity)?.completePasswordSetup(groupId)
                                     }
                                 }
                             }
@@ -613,28 +570,6 @@ fun PasswordSetupScreen(
             )
         }
 
-        // Overlay permission confirmation dialog
-        if (showOverlayDialog.value) {
-            AlertDialog(
-                onDismissRequest = { showOverlayDialog.value = false },
-                title = {
-                    Text(text = "Enable 'Display over other apps'?", fontWeight = FontWeight.Bold)
-                },
-                text = {
-                    Text(
-                        "DALE needs the 'Display over other apps' permission so it can show the lock screen overlay."
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        showOverlayDialog.value = false
-                        (activity as? PasswordSetupActivity)?.proceedToOverlayPermission(groupId)
-                    }) {
-                        Text("Open Overlay Settings")
-                    }
-                }
-            )
-        }
     }
 }
 
@@ -757,13 +692,15 @@ fun CredentialEntryScreen(
     appIndex: Int = 1,
     app1PinLength: Int = 0,
     groupCreatedName: String = "",
+    hapticIntensity: Int = 100,
     onCredentialConfirmed: (String) -> Unit = {}
 ) {
     val normalizedType = authType.uppercase()
     val isPinMode = normalizedType == "PIN"
     val isPatternMode = normalizedType == "PATTERN"
     val minLength = when {
-        isPinMode || isPatternMode -> if (appIndex == 1) 1 else (if (app1PinLength > 0) app1PinLength else 4)
+        isPatternMode -> if (appIndex == 1) 1 else (if (app1PinLength > 0) app1PinLength else 1)
+        isPinMode -> if (appIndex == 1) 1 else (if (app1PinLength > 0) app1PinLength else 4)
         else -> 6
     }
     val maxLength = when {
@@ -780,6 +717,15 @@ fun CredentialEntryScreen(
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isClearingPin by remember { mutableStateOf(false) }
+    var pinDotsAlphaTarget by remember { mutableStateOf(1f) }
+    val pinDotsAlpha by animateFloatAsState(
+        targetValue = pinDotsAlphaTarget,
+        animationSpec = tween(180),
+        label = "SetupPinDotsAlpha"
+    )
+
     val setupAppIcon = remember(appPackageName) {
         try {
             appPackageName?.let { pkg ->
@@ -793,17 +739,24 @@ fun CredentialEntryScreen(
     val currentState = if (step.value == 0) firstInput else confirmInput
     val currentValue = currentState.value
     val isButtonEnabled = currentValue.length >= minLength
+    val pinEntryMaxLength = when {
+        isPinMode && appIndex == 1 && step.value == 1 && firstInput.value.isNotEmpty() -> firstInput.value.length
+        else -> maxLength
+    }
 
     fun advanceWithValue(inputValue: String) {
+        val stepMaxLength = when {
+            isPinMode && appIndex == 1 && step.value == 1 && firstInput.value.isNotEmpty() -> firstInput.value.length
+            else -> maxLength
+        }
         if (appIndex == 1 && isPinMode) {
-            // For App1: No minimum length restriction for PIN
             if (inputValue.isEmpty()) {
                 errorMessage.value = "Please enter a PIN"
                 return
             }
         } else if (inputValue.length < minLength) {
             errorMessage.value = if (isPatternMode) {
-                "Pattern must connect at least 4 dots"
+                "Please draw a pattern"
             } else if (isPinMode) {
                 if (appIndex == 2 && app1PinLength > 0) {
                     "PIN must be $app1PinLength digits"
@@ -829,7 +782,7 @@ fun CredentialEntryScreen(
                     firstInput.value = ""
                     confirmInput.value = ""
                 } else {
-                    firstInput.value = inputValue.take(maxLength)
+                    firstInput.value = inputValue.take(stepMaxLength)
                     confirmInput.value = ""
                     step.value = 1
                     errorMessage.value = ""
@@ -837,7 +790,7 @@ fun CredentialEntryScreen(
             }
 
             1 -> {
-                confirmInput.value = inputValue.take(maxLength)
+                confirmInput.value = inputValue.take(stepMaxLength)
                 if (firstInput.value == confirmInput.value) {
                     onCredentialConfirmed(firstInput.value)
                 } else {
@@ -882,7 +835,6 @@ fun CredentialEntryScreen(
         }
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Title & step text
         Text(
             text = if (step.value == 0) {
                 "Enter " + when {
@@ -912,24 +864,23 @@ fun CredentialEntryScreen(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // Keep pattern pad near the bottom for better thumb reach.
         if (isPatternMode) {
             Spacer(modifier = Modifier.weight(1f))
         }
 
-         // Credential visual (PIN dots / pattern pad)
-         if (isPinMode) {
-             PinDisplayBox(
-                 pin = currentValue,
-                 appIndex = appIndex,
-                 app1PinLength = app1PinLength,
-                 step = step.value,
-                 firstInputLength = firstInput.value.length,
-                 modifier = Modifier
-                     .padding(top = 24.dp, bottom = 12.dp)
-                     .height(72.dp)
-                     .fillMaxWidth()
-             )
+        if (isPinMode) {
+            PinDisplayBox(
+                pin = currentValue,
+                appIndex = appIndex,
+                app1PinLength = app1PinLength,
+                step = step.value,
+                firstInputLength = firstInput.value.length,
+                dotsAlpha = pinDotsAlpha,
+                modifier = Modifier
+                    .padding(top = 24.dp, bottom = 12.dp)
+                    .height(72.dp)
+                    .fillMaxWidth()
+            )
         } else if (isPatternMode) {
             PatternCredentialBox(
                 onPatternDrawn = { drawnPattern ->
@@ -940,18 +891,18 @@ fun CredentialEntryScreen(
                     }
                     advanceWithValue(drawnPattern)
                 },
+                hapticIntensity = hapticIntensity,
                 modifier = Modifier
                     .size(280.dp)
             )
             Text(
-                text = "Draw pattern with at least 4 dots",
+                text = "Draw a pattern",
                 fontSize = 12.sp,
                 color = Color(0xFFB0B0B0),
                 modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
             )
         }
 
-        // Error message (if any)
         if (errorMessage.value.isNotEmpty()) {
             Text(
                 text = errorMessage.value,
@@ -964,7 +915,6 @@ fun CredentialEntryScreen(
             Spacer(modifier = Modifier.height(8.dp))
         }
 
-        // For password mode only, show a compact password field (no scrolling)
         if (!isPinMode && !isPatternMode) {
             OutlinedTextField(
                 value = currentState.value,
@@ -1014,31 +964,197 @@ fun CredentialEntryScreen(
             }
         }
 
-        // Spacer to push keypad down but keep everything on a single page
         if (isPinMode) {
             Spacer(modifier = Modifier.weight(1f))
         }
 
-        // PIN keypad at bottom – same style as lock screen, non-scrollable
         if (isPinMode) {
             VirtualNumberKeypad(
                 onNumberClick = { number ->
-                    if (currentState.value.length < maxLength) {
+                    if (!isClearingPin && currentState.value.length < pinEntryMaxLength) {
                         currentState.value += number
                         errorMessage.value = ""
                     }
                 },
                 onBackspace = {
-                    if (currentState.value.isNotEmpty()) {
+                    if (!isClearingPin && currentState.value.isNotEmpty()) {
                         currentState.value = currentState.value.dropLast(1)
                         errorMessage.value = ""
                     }
                 },
+                onBackspaceLongPress = {
+                    if (!isClearingPin && currentState.value.isNotEmpty()) {
+                        isClearingPin = true
+                        pinDotsAlphaTarget = 0f
+                        scope.launch {
+                            delay(140)
+                            currentState.value = ""
+                            errorMessage.value = ""
+                            pinDotsAlphaTarget = 1f
+                            delay(120)
+                            isClearingPin = false
+                        }
+                    }
+                },
                 onConfirm = { advanceWithValue(currentValue) },
                 isConfirmEnabled = isButtonEnabled,
-                confirmLabel = if (step.value == 0) "Next" else "Confirm"
+                confirmLabel = if (step.value == 0) "Next" else "Confirm",
+                hapticIntensity = hapticIntensity
             )
         }
+    }
+}
+
+@Composable
+fun VirtualNumberKeypad(
+    onNumberClick: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onBackspaceLongPress: () -> Unit = {},
+    onConfirm: () -> Unit,
+    isConfirmEnabled: Boolean = true,
+    confirmLabel: String = "Confirm",
+    hapticIntensity: Int = 100,
+    buttonSize: androidx.compose.ui.unit.Dp = 76.dp,
+    buttonPadding: androidx.compose.ui.unit.Dp = 6.dp,
+    numberFontSize: androidx.compose.ui.unit.TextUnit = 22.sp,
+    confirmArrowFontSize: androidx.compose.ui.unit.TextUnit = 24.sp,
+    rowSpacing: androidx.compose.ui.unit.Dp = 0.dp
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(top = 4.dp, bottom = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(rowSpacing)
+    ) {
+        // Rows 1-3: Numbers 1-9 – centered like lock screen keypad
+        for (row in 0..2) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                for (col in 1..3) {
+                    val number = (row * 3) + col
+                    NumberPadButton(
+                        number = number.toString(),
+                        onClick = { onNumberClick(number.toString()) },
+                        enabled = true,
+                        buttonSize = buttonSize,
+                        buttonPadding = buttonPadding,
+                        fontSize = numberFontSize,
+                        hapticIntensity = hapticIntensity
+                    )
+                }
+            }
+        }
+
+        // Bottom row: Backspace, 0, Continue arrow
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            // Backspace button on the left
+            NumberPadButton(
+                number = "⌫",
+                onClick = onBackspace,
+                onLongClick = onBackspaceLongPress,
+                enabled = true,
+                buttonSize = buttonSize,
+                buttonPadding = buttonPadding,
+                fontSize = numberFontSize,
+                hapticIntensity = hapticIntensity
+            )
+
+            // 0 in the middle
+            NumberPadButton(
+                number = "0",
+                onClick = { onNumberClick("0") },
+                enabled = true,
+                buttonSize = buttonSize,
+                buttonPadding = buttonPadding,
+                fontSize = numberFontSize,
+                hapticIntensity = hapticIntensity
+            )
+
+            // Continue button with arrow on the right
+            Box(
+                modifier = Modifier
+                    .size(buttonSize)
+                    .padding(buttonPadding)
+                    .shadow(
+                        elevation = if (isConfirmEnabled) 3.dp else 0.dp,
+                        shape = CircleShape
+                    )
+                    .clip(CircleShape)
+                    .background(if (isConfirmEnabled) Color(0xFF9575CD) else Color(0xFF4A3B66))
+                    .clickable(enabled = isConfirmEnabled, onClick = {
+                        performKeypadHaptic(context, intensityPercent = hapticIntensity)
+                        onConfirm()
+                    }),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "→",
+                    fontSize = confirmArrowFontSize,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isConfirmEnabled) Color.White else Color.White.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NumberPadButton(
+    number: String,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
+    buttonSize: androidx.compose.ui.unit.Dp = 76.dp,
+    buttonPadding: androidx.compose.ui.unit.Dp = 6.dp,
+    fontSize: androidx.compose.ui.unit.TextUnit = 22.sp,
+    hapticIntensity: Int = 100
+) {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .size(buttonSize)
+            .padding(buttonPadding)
+            .shadow(
+                elevation = if (enabled) 3.dp else 0.dp,
+                shape = CircleShape
+            )
+            .clip(CircleShape)
+            .background(if (enabled) Color(0xFF0F315C) else Color(0xFF0A213F))
+            .pointerInput(enabled, onLongClick) {
+                if (enabled) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val releasedBeforeTimeout = withTimeoutOrNull(500) {
+                            waitForUpOrCancellation() != null
+                        } == true
+
+                        if (releasedBeforeTimeout) {
+                            performKeypadHaptic(context, intensityPercent = hapticIntensity)
+                            onClick()
+                        } else if (onLongClick != null) {
+                            performKeypadHaptic(context, intensityPercent = 60)
+                            onLongClick()
+                            waitForUpOrCancellation()
+                        }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = number,
+            fontSize = fontSize,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) Color.White else Color(0xFF6D7B8F)
+        )
     }
 }
 
@@ -1049,6 +1165,7 @@ fun PinDisplayBox(
     app1PinLength: Int = 0,
     step: Int = 0,
     firstInputLength: Int = 0,
+    dotsAlpha: Float = 1f,
     modifier: Modifier = Modifier
 ) {
     // Determine the total number of dots to display
@@ -1074,6 +1191,7 @@ fun PinDisplayBox(
             contentAlignment = Alignment.Center
         ) {
             Row(
+                modifier = Modifier.alpha(dotsAlpha),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1113,6 +1231,7 @@ fun PinDot(isFilled: Boolean) {
 @Composable
 fun PatternCredentialBox(
     onPatternDrawn: (String) -> Unit,
+    hapticIntensity: Int = 100,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -1126,6 +1245,7 @@ fun PatternCredentialBox(
                 .fillMaxSize()
                 .padding(24.dp),
             enabled = true,
+            hapticIntensity = hapticIntensity,
             onPatternDrawn = onPatternDrawn
         )
     }
@@ -1406,106 +1526,7 @@ fun BiometricBackupCredentialDialog(
     )
 }
 
-@Composable
-fun VirtualNumberKeypad(
-    onNumberClick: (String) -> Unit,
-    onBackspace: () -> Unit,
-    onConfirm: () -> Unit,
-    isConfirmEnabled: Boolean = true,
-    confirmLabel: String = "Confirm"
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .navigationBarsPadding()
-            .padding(top = 4.dp, bottom = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Rows 1-3: Numbers 1-9 – centered like lock screen keypad
-        for (row in 0..2) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                for (col in 1..3) {
-                    val number = (row * 3) + col
-                    NumberPadButton(
-                        number = number.toString(),
-                        onClick = { onNumberClick(number.toString()) },
-                        enabled = true
-                    )
-                }
-            }
-        }
 
-        // Bottom row: Backspace, 0, Continue arrow
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center
-        ) {
-            // Backspace button on the left
-            NumberPadButton(
-                number = "⌫",
-                onClick = onBackspace,
-                enabled = true
-            )
 
-            // 0 in the middle
-            NumberPadButton(
-                number = "0",
-                onClick = { onNumberClick("0") },
-                enabled = true
-            )
 
-            // Continue button with arrow on the right
-            Box(
-                modifier = Modifier
-                    .size(76.dp)
-                    .padding(6.dp)
-                    .shadow(
-                        elevation = if (isConfirmEnabled) 3.dp else 0.dp,
-                        shape = CircleShape
-                    )
-                    .clip(CircleShape)
-                    .background(if (isConfirmEnabled) Color(0xFF9575CD) else Color(0xFF4A3B66))
-                    .clickable(enabled = isConfirmEnabled, onClick = onConfirm),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "→",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isConfirmEnabled) Color.White else Color.White.copy(alpha = 0.7f)
-                )
-            }
-        }
-    }
-}
 
-@Composable
-fun NumberPadButton(
-    number: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true
-) {
-    Box(
-        modifier = Modifier
-            .size(76.dp)
-            .padding(6.dp)
-            .shadow(
-                elevation = if (enabled) 3.dp else 0.dp,
-                shape = CircleShape
-            )
-            .clip(CircleShape)
-            .background(if (enabled) Color(0xFF0F315C) else Color(0xFF0A213F))
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = number,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (enabled) Color.White else Color(0xFF6D7B8F)
-        )
-    }
-}

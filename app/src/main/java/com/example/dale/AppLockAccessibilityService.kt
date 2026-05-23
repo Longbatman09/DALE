@@ -8,7 +8,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.view.accessibility.AccessibilityEvent
 import androidx.core.content.ContextCompat
-import com.example.dale.utils.MonitorStartupHelper
 import com.example.dale.utils.SharedPreferencesManager
 
 class AppLockAccessibilityService : AccessibilityService() {
@@ -56,7 +55,6 @@ class AppLockAccessibilityService : AccessibilityService() {
         if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
 
         if (!sharedPrefs.isProtectionEnabled()) return
-        if (!MonitorStartupHelper.hasOverlayPermission(this)) return
 
         val packageName = event.packageName?.toString() ?: return
         if (packageName.isBlank() || packageName == this.packageName) return

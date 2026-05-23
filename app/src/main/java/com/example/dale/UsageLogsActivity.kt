@@ -63,6 +63,7 @@ fun UsageLogsScreen(
     
     val app1Unlocks = activityLogs.count { it.packageName == app1Package && it.event == "OPENED" }
     val app2Unlocks = activityLogs.count { it.packageName == app2Package && it.event == "OPENED" }
+    val totalGroupUnlocks = app1Unlocks + app2Unlocks
     
     val formatMs: (Long) -> String = { ms ->
         val totalSec = ms / 1000
@@ -111,9 +112,6 @@ fun UsageLogsScreen(
     val app1TimeFormatted = formatMs(computedApp1Ms)
     val app2TimeFormatted = formatMs(computedApp2Ms)
     
-    val totalTimeMs = computedApp1Ms + computedApp2Ms
-    val totalTimeFormatted = formatMs(totalTimeMs)
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -165,7 +163,7 @@ fun UsageLogsScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Top Rectangle: Total Time Unlocked
+                // Top Rectangle: Total unlock count for the group
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -178,14 +176,14 @@ fun UsageLogsScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Total Time Unlocked",
+                            text = "Total Times Unlocked",
                             fontSize = 16.sp,
                             fontWeight = FontWeight.Medium,
                             color = Color.LightGray
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = totalTimeFormatted,
+                            text = "$totalGroupUnlocks",
                             fontSize = 32.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFBB86FC)

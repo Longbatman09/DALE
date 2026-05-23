@@ -172,7 +172,9 @@ class AppLockManager private constructor(private val context: Context) {
         val group = groups.find { it.app1PackageName == pkg || it.app2PackageName == pkg }
         if (group != null) {
             val latestEvent = sharedPrefs.getLatestActivityEventForPackage(group.id, pkg)
-            if (latestEvent != "CLOSED") {
+            if (latestEvent == null) {
+                Log.d(TAG, "Skipping CLOSED for $pkg because no previous activity log exists")
+            } else if (latestEvent != "CLOSED") {
                 saveActivityLog(group.id, pkg, "CLOSED")
                 Log.d(TAG, "Logged CLOSED for $pkg")
             }

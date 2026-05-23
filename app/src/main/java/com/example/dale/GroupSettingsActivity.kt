@@ -114,6 +114,7 @@ fun GroupSettingsScreen(
     val showDestroyingLoader = remember { mutableStateOf(false) }
     val showRenameDialog = remember { mutableStateOf(false) }
     val showFingerprintDialog = remember { mutableStateOf(false) }
+    val showUninstallProtectionDialog = remember { mutableStateOf(false) }
     val groupLockType = remember(currentGroup) {
         val app1Type = currentGroup?.app1LockType?.uppercase(Locale.ROOT)
         val app2Type = currentGroup?.app2LockType?.uppercase(Locale.ROOT)
@@ -220,16 +221,25 @@ fun GroupSettingsScreen(
                     )
 
                     SettingsCard(
-                        title = "Fingerprint Unlock",
+                        title = "Biometric Unlock",
                         subtitle = when {
                             !hasFingerprintSensor -> "Fingerprint sensor not available on this device"
                             !isFingerprintAvailable -> "Add a fingerprint in device settings first"
-                            else -> "Enable fingerprint unlock per app"
+                            else -> "Enable biometric unlock per app"
                         },
                         iconResourceId = R.drawable.ic_bio,
                         enabled = hasFingerprintSensor,
                         onClick = {
                             showFingerprintDialog.value = true
+                        }
+                    )
+
+                    SettingsCard(
+                        title = "Uninstall Protection",
+                        subtitle = "Enable uninstall protection per app",
+                        iconResourceId = R.drawable.anti_uninstall,
+                        onClick = {
+                            showUninstallProtectionDialog.value = true
                         }
                     )
 
@@ -331,6 +341,19 @@ fun GroupSettingsScreen(
                 onSaved = { updatedGroup ->
                     group = updatedGroup
                     showFingerprintDialog.value = false
+                }
+            )
+        }
+
+        if (showUninstallProtectionDialog.value && currentGroup != null) {
+            UninstallProtectionDialog(
+                currentGroup = currentGroup,
+                sharedPrefs = sharedPrefs,
+                activity = activity,
+                onDismiss = { showUninstallProtectionDialog.value = false },
+                onSaved = { updatedGroup ->
+                    group = updatedGroup
+                    showUninstallProtectionDialog.value = false
                 }
             )
         }
@@ -642,6 +665,152 @@ fun FingerprintSelectionDialog(
                         app2FingerprintEnabled = selectedApp == "app2",
                         app1FingerprintBiometricOnly = false,
                         app2FingerprintBiometricOnly = false
+                    )
+                    sharedPrefs.saveAppGroup(updated)
+                    onSaved(updated)
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun UninstallProtectionDialog(
+    currentGroup: AppGroup,
+    sharedPrefs: SharedPreferencesManager,
+    activity: ComponentActivity,
+    onDismiss: () -> Unit,
+    onSaved: (AppGroup) -> Unit
+) {
+    var app1Enabled by remember(currentGroup.id) {
+        mutableStateOf(currentGroup.app1UninstallProtectionEnabled != false)
+    }
+    var app2Enabled by remember(currentGroup.id) {
+        mutableStateOf(currentGroup.app2UninstallProtectionEnabled != false)
+    }
+
+    val app1Icon = remember {
+        try {
+            activity.packageManager.getApplicationIcon(currentGroup.app1PackageName)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    val app2Icon = remember {
+        try {
+            activity.packageManager.getApplicationIcon(currentGroup.app2PackageName)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF03193B),
+        title = {
+            Text(
+                text = "Uninstall Protection",
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Enable or disable uninstall protection for each app.",
+                    color = Color(0xFFB0B0B0),
+                    fontSize = 12.sp
+                )
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2A54))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (app1Icon != null) {
+                            Image(
+                                bitmap = app1Icon.toBitmap().asImageBitmap(),
+                                contentDescription = currentGroup.app1Name,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = currentGroup.app1Name.ifBlank { currentGroup.app1PackageName },
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Switch(
+                            checked = app1Enabled,
+                            onCheckedChange = { app1Enabled = it }
+                        )
+                    }
+                }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF0F2A54))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (app2Icon != null) {
+                            Image(
+                                bitmap = app2Icon.toBitmap().asImageBitmap(),
+                                contentDescription = currentGroup.app2Name,
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Text(
+                            text = currentGroup.app2Name.ifBlank { currentGroup.app2PackageName },
+                            fontSize = 14.sp,
+                            color = Color.White,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Switch(
+                            checked = app2Enabled,
+                            onCheckedChange = { app2Enabled = it }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val updated = currentGroup.copy(
+                        app1UninstallProtectionEnabled = app1Enabled,
+                        app2UninstallProtectionEnabled = app2Enabled
                     )
                     sharedPrefs.saveAppGroup(updated)
                     onSaved(updated)

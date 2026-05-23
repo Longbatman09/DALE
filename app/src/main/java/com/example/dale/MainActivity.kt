@@ -1,13 +1,17 @@
 package com.example.dale
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
@@ -67,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.dale.ui.theme.DALETheme
@@ -119,9 +124,14 @@ class MainActivity : ComponentActivity() {
 fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var hasAccessibility by remember { mutableStateOf(MonitorStartupHelper.isAccessibilityServiceEnabled(context)) }
-    var hasOverlay by remember { mutableStateOf(MonitorStartupHelper.hasOverlayPermission(context)) }
+    var hasNotifications by remember { mutableStateOf(areNotificationsGranted(context)) }
     var hasBattery by remember { mutableStateOf(MonitorStartupHelper.isIgnoringBatteryOptimizations(context)) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotifications = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+    }
 
     // Re-check all permissions each time refreshKey changes (triggered on every resume)
     DisposableEffect(Unit) {
@@ -136,30 +146,11 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
 
     LaunchedEffect(refreshKey) {
         hasAccessibility = MonitorStartupHelper.isAccessibilityServiceEnabled(context)
-        hasOverlay = MonitorStartupHelper.hasOverlayPermission(context)
+        hasNotifications = areNotificationsGranted(context)
         hasBattery = MonitorStartupHelper.isIgnoringBatteryOptimizations(context)
-
-        if (hasOverlay) {
-            // Accessibility service is now the only detection method
-        }
     }
 
     when {
-        !hasOverlay -> PermissionWallScreen(
-            modifier = modifier,
-            icon = "🪟",
-            title = "Draw Over Other Apps",
-            description = "DALE needs to display the lock screen on top of other apps.\n\nFind \"DALE\" and turn on \"Allow display over other apps\".",
-            buttonText = "Open Overlay Settings",
-            onAction = {
-                val i = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    "package:${context.packageName}".toUri()
-                )
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(i)
-            }
-        )
         !hasAccessibility -> PermissionWallScreen(
             modifier = modifier,
             iconRes = R.drawable.accesibility,
@@ -168,6 +159,16 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
             buttonText = "Open Accessibility Settings",
             onAction = {
                 MonitorStartupHelper.openAccessibilitySettings(context)
+            }
+        )
+        !hasNotifications -> PermissionWallScreen(
+            modifier = modifier,
+            icon = "🔔",
+            title = "Enable Notifications",
+            description = "DALE uses notifications to warn you when uninstall protection is about to expire.\n\nTap below to allow notifications.",
+            buttonText = "Allow Notifications",
+            onAction = {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         )
         !hasBattery -> PermissionWallScreen(
@@ -190,6 +191,17 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
             }
         )
         else -> HomeScreen(modifier = modifier, activity = activity)
+    }
+}
+
+private fun areNotificationsGranted(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        true
+    } else {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
     }
 }
 

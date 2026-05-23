@@ -1,0 +1,26 @@
+Monitor AccessibilityEvent window changes and trigger uninstall_prevent() only when ALL of the following conditions are true:
+
+1. The foreground package name contains "packageinstaller"
+   Examples:
+   - com.android.packageinstaller
+   - com.google.android.packageinstaller
+   - com.samsung.android.packageinstaller
+
+2. The visible window text or node hierarchy contains the target app name:
+   "Particular App Name"
+
+3. The visible text also contains the phrase:
+   "Uninstall"
+
+Logic:
+
+IF
+(packageName contains "packageinstaller")
+AND
+(windowText contains "Particular App Name")
+AND
+(windowText contains "Uninstall")
+THEN
+trigger uninstall_prevent()
+
+Use AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED and TYPE_WINDOW_CONTENT_CHANGED events to continuously monitor the active uninstall dialog.

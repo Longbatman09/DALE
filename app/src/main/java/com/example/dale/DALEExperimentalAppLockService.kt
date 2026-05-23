@@ -1,5 +1,6 @@
 package com.example.dale
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -12,13 +13,11 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import android.view.inputmethod.InputMethodManager
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.example.dale.utils.SharedPreferencesManager
 import com.example.dale.utils.AppActivityLogger
-import com.example.dale.utils.DetectionMethod
-import com.example.dale.utils.DetectionMethodManager
 import java.util.Timer
 import kotlin.concurrent.timerTask
 
@@ -113,10 +112,10 @@ class DALEExperimentalAppLockService : Service() {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_USER_PRESENT)
             }
-            registerReceiver(screenStateReceiver, filter, android.content.Context.RECEIVER_EXPORTED)
-            
+            ContextCompat.registerReceiver(this, screenStateReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
+
             startMonitoringTimer()
-            startForegroundService()
+            startAsForegroundService()
             Log.d(TAG, "Experimental service started successfully (250ms polling)")
             return START_STICKY
         } catch (e: Exception) {
@@ -134,7 +133,7 @@ class DALEExperimentalAppLockService : Service() {
         
         try {
             unregisterReceiver(screenStateReceiver)
-        } catch (e: IllegalArgumentException) {
+        } catch (_: IllegalArgumentException) {
             Log.w(TAG, "Receiver not registered")
         }
         
@@ -166,8 +165,7 @@ class DALEExperimentalAppLockService : Service() {
                     return@timerTask
                 }
                 
-                val foregroundApp = getCurrentForegroundAppPackage() ?: return@timerTask
-                val currentPackage = foregroundApp.first
+                val currentPackage = getCurrentForegroundAppPackage() ?: return@timerTask
                 val triggeringPackage = previousForegroundPackage
                 previousForegroundPackage = currentPackage
                 
@@ -182,7 +180,7 @@ class DALEExperimentalAppLockService : Service() {
                 // Only trigger on package change
                 if (currentPackage == triggeringPackage) return@timerTask
                 
-                checkAndLockApp(currentPackage, triggeringPackage, System.currentTimeMillis())
+                checkAndLockApp(currentPackage, System.currentTimeMillis())
             } catch (e: Exception) {
                 Log.e(TAG, "Error in monitoring timer", e)
             }
@@ -195,13 +193,14 @@ class DALEExperimentalAppLockService : Service() {
      * Get current foreground app using Usage Stats
      * Returns Pair<packageName, className>
      */
-    private fun getCurrentForegroundAppPackage(): Pair<String, String>? {
+    @SuppressLint("MissingPermission")
+    private fun getCurrentForegroundAppPackage(): String? {
         return try {
             val time = System.currentTimeMillis()
             val events = usageStatsManager.queryEvents(time - 1000 * 100, time)
             val event = UsageEvents.Event()
-            var recentApp: Pair<String, String>? = null
-            
+            var recentApp: String? = null
+
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
                 
@@ -215,7 +214,7 @@ class DALEExperimentalAppLockService : Service() {
                 if (event.className in DALELockConstants.KNOWN_RECENTS_CLASSES) continue
                 
                 // This is the latest foreground activity
-                recentApp = Pair(event.packageName, event.className)
+                recentApp = event.packageName
             }
             
             recentApp
@@ -231,7 +230,7 @@ class DALEExperimentalAppLockService : Service() {
                 packageName in DALELockConstants.EXCLUDED_APPS
     }
     
-    private fun checkAndLockApp(packageName: String, triggeringPackage: String, currentTime: Long) {
+    private fun checkAndLockApp(packageName: String, currentTime: Long) {
         try {
             val sharedPrefs = SharedPreferencesManager.getInstance(this)
             
@@ -242,11 +241,8 @@ class DALEExperimentalAppLockService : Service() {
             }
             
             // Check if app is in any protected group
-            val appGroups = sharedPrefs.getAllAppGroups()
-            var foundInGroup = false
-            for (group in appGroups) {
+            for (group in sharedPrefs.getAllAppGroups()) {
                 if (packageName == group.app1PackageName || packageName == group.app2PackageName) {
-                    foundInGroup = true
                     // Check unlock grace period
                     val unlockTime = DALEAppLockManager.appUnlockTimes[packageName]
                     if (unlockTime != null) {
@@ -269,10 +265,8 @@ class DALEExperimentalAppLockService : Service() {
                     return
                 }
             }
-            
-            if (!foundInGroup) {
-                Log.d(TAG, "Package $packageName not in any protected group")
-            }
+
+            Log.d(TAG, "Package $packageName not in any protected group")
         } catch (e: Exception) {
             Log.e(TAG, "Error in checkAndLockApp", e)
         }
@@ -310,12 +304,13 @@ class DALEExperimentalAppLockService : Service() {
          }
      }
 
+    @SuppressLint("MissingPermission")
     private fun hasUsagePermission(): Boolean {
         return try {
             val time = System.currentTimeMillis()
             usageStatsManager.queryEvents(time - 1000, time)
             true
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             Log.d(TAG, "PACKAGE_USAGE_STATS permission not available")
             false
         }
@@ -330,8 +325,7 @@ class DALEExperimentalAppLockService : Service() {
         }
     }
     
-    @RequiresApi(Build.VERSION_CODES.Q)
-    private fun startForegroundService() {
+    private fun startAsForegroundService() {
         try {
             createNotificationChannel()
             val notification = createNotification()

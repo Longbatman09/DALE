@@ -43,6 +43,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,6 +61,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -503,7 +506,9 @@ fun AppSelectionScreen(
                                 app1PackageName = app1.value?.packageName ?: "",
                                 app1Name = app1.value?.appName ?: "",
                                 app2PackageName = app2.value?.packageName ?: "",
-                                app2Name = app2.value?.appName ?: ""
+                                app2Name = app2.value?.appName ?: "",
+                                app1UninstallProtectionEnabled = true,
+                                app2UninstallProtectionEnabled = true
                             )
 
                             SharedPreferencesManager.getInstance(activity!!).savePendingAppGroup(appGroup)
@@ -561,6 +566,19 @@ fun AppSelectionStep(
     onCategoryChange: (Int) -> Unit = {},
     usedPackagesToGroupName: Map<String, String> = emptyMap()
 ) {
+    var searchQuery by remember(title, selectedCategory) { mutableStateOf("") }
+    val filteredApps = remember(apps, searchQuery) {
+        val query = searchQuery.trim()
+        if (query.isEmpty()) {
+            apps
+        } else {
+            apps.filter { app ->
+                app.appName.contains(query, ignoreCase = true) ||
+                    app.packageName.contains(query, ignoreCase = true)
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -621,6 +639,40 @@ fun AppSelectionStep(
             )
         }
 
+        TextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            placeholder = {
+                Text(
+                    text = "Search apps…",
+                    color = Color(0xFF666666)
+                )
+            },
+            trailingIcon = {
+                Image(
+                    painter = painterResource(R.drawable.search),
+                    contentDescription = "Search",
+                    modifier = Modifier
+                        .size(24.dp)
+                        .padding(end = 4.dp)
+                )
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(8.dp),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = Color(0xFF0f3460),
+                unfocusedContainerColor = Color(0xFF0a2940),
+                focusedTextColor = Color(0xFFE0E0E0),
+                unfocusedTextColor = Color(0xFFB0B0B0),
+                cursorColor = Purple80,
+                focusedIndicatorColor = Purple80,
+                unfocusedIndicatorColor = Color(0xFF1a3a52)
+            )
+        )
+
         // Apps List
         LazyColumn(
             modifier = Modifier
@@ -628,8 +680,21 @@ fun AppSelectionStep(
                 .weight(1f),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (filteredApps.isEmpty()) {
+                item(key = "no_apps_found") {
+                    Text(
+                        text = if (searchQuery.isBlank()) "No apps available" else "No apps match your search",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        color = Color(0xFFB0B0B0),
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
             items(
-                items = apps,
+                items = filteredApps,
                 key = { app -> app.packageName }
             ) { app ->
                 val usedByGroup = usedPackagesToGroupName[app.packageName]
