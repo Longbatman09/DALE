@@ -263,19 +263,6 @@ fun GroupSettingsScreen(
                         }
                     )
 
-                    // Customisation Option
-                    SettingsCard(
-                        title = "Customisation",
-                        subtitle = "Screen lock type and appearance",
-                        iconResourceId = R.drawable.brush,
-                        onClick = {
-                            val intent = Intent(activity, CustomisationActivity::class.java)
-                            intent.putExtra("GROUP_ID", currentGroup.id)
-                            intent.putExtra("GROUP_NAME", currentGroup.groupName)
-                            activity.startActivity(intent)
-                        }
-                    )
-
                     // Delete Group Option
                     SettingsCard(
                         title = "Delete Group",

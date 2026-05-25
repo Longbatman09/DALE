@@ -1,7 +1,9 @@
 package com.example.dale.utils
 
 import android.content.Context
+import android.os.Bundle
 import android.util.Log
+import com.google.firebase.analytics.FirebaseAnalytics
 import java.io.File
 import java.time.Instant
 import kotlin.concurrent.thread
@@ -14,10 +16,12 @@ object AppActivityLogger {
     private const val TAG = "AppActivityLogger"
     private const val SECURITY_LOGS = "activity_log.txt"
     private lateinit var context: Context
+    private lateinit var firebaseAnalytics: FirebaseAnalytics
     private var loggingEnabled = true
 
     fun initialize(application: Context) {
         context = application
+        firebaseAnalytics = FirebaseAnalytics.getInstance(application)
     }
 
     fun setLoggingEnabled(enabled: Boolean) {
@@ -44,6 +48,15 @@ object AppActivityLogger {
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
+                // Log to Firebase
+                val bundle = Bundle().apply {
+                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
+                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
+                    putString("group_name", groupName)
+                    putString("detection_method", detectionMethod)
+                }
+                firebaseAnalytics.logEvent("app_opened", bundle)
+
                 val file = File(context.filesDir, SECURITY_LOGS)
                 if (!file.exists()) {
                     file.createNewFile()
@@ -79,6 +92,15 @@ object AppActivityLogger {
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
+                // Log to Firebase
+                val bundle = Bundle().apply {
+                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
+                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
+                    putString("group_name", groupName)
+                    putString("detection_method", detectionMethod)
+                }
+                firebaseAnalytics.logEvent("app_closed", bundle)
+
                 val file = File(context.filesDir, SECURITY_LOGS)
                 if (!file.exists()) {
                     file.createNewFile()
@@ -110,6 +132,15 @@ object AppActivityLogger {
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
+                // Log to Firebase
+                val bundle = Bundle().apply {
+                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
+                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
+                    putString("group_name", groupName)
+                    putString("detection_method", detectionMethod)
+                }
+                firebaseAnalytics.logEvent("lock_screen_triggered", bundle)
+
                 val file = File(context.filesDir, SECURITY_LOGS)
                 if (!file.exists()) {
                     file.createNewFile()
@@ -139,6 +170,15 @@ object AppActivityLogger {
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
+                // Log to Firebase
+                val bundle = Bundle().apply {
+                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
+                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
+                    putString("group_name", groupName)
+                    putBoolean("success", success)
+                }
+                firebaseAnalytics.logEvent("pin_attempt", bundle)
+
                 val file = File(context.filesDir, SECURITY_LOGS)
                 if (!file.exists()) {
                     file.createNewFile()
@@ -199,4 +239,3 @@ object AppActivityLogger {
         return getActivityLogs().joinToString("\n")
     }
 }
-

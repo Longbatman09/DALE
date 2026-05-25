@@ -58,7 +58,7 @@ class WelcomeActivity : ComponentActivity() {
     }
 
     private fun startSetup() {
-        val intent = Intent(this, SetupActivity::class.java)
+        val intent = Intent(this, AppSelectionActivity::class.java)
         startActivity(intent)
     }
 }

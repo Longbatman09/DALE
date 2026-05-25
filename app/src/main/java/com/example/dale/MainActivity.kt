@@ -81,6 +81,11 @@ import com.example.dale.utils.MonitorStartupHelper
 import com.example.dale.utils.SharedPreferencesManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import android.widget.Toast
+import com.google.firebase.database.FirebaseDatabase
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -163,7 +168,7 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
         )
         !hasNotifications -> PermissionWallScreen(
             modifier = modifier,
-            icon = "🔔",
+            iconRes = R.drawable.noti,
             title = "Enable Notifications",
             description = "DALE uses notifications to warn you when uninstall protection is about to expire.\n\nTap below to allow notifications.",
             buttonText = "Allow Notifications",
@@ -308,6 +313,7 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
     var showDestroyConfirmation by remember { mutableStateOf(false) }
     var showDestroyingScreen by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
+    var showFeedback by remember { mutableStateOf(false) }
     var protectionActive by remember { mutableStateOf(false) }
     var protectionEnabled by remember { mutableStateOf(sharedPrefs.isProtectionEnabled()) }
     var showProtectionDisableConfirmation by remember { mutableStateOf(false) }
@@ -430,6 +436,12 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
         AboutScreen(
             modifier = modifier,
             onClose = { showAbout = false },
+            activity = hostActivity
+        )
+    } else if (showFeedback) {
+        FeedbackScreen(
+            modifier = modifier,
+            onClose = { showFeedback = false },
             activity = hostActivity
         )
     } else {
@@ -605,9 +617,8 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
                          showDestroyConfirmation = true
                      } else if (menuItem == "About") {
                          showAbout = true
-                     } else if (menuItem == "Developer") {
-                         val intent = Intent(activity, DeveloperConsoleActivity::class.java)
-                         activity.startActivity(intent)
+                     } else if (menuItem == "Feedback") {
+                         showFeedback = true
                      }
                      isMenuOpen = false
                  }
@@ -766,11 +777,12 @@ fun SideMenu(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Developer Console Button
+            // Feedback Button
             MenuItem(
-                text = "Developer Console",
-                icon = "🔧",
-                onClick = { onMenuItemClick("Developer") }
+                text = "Feedback",
+                iconRes = R.drawable.feedback,
+                iconSize = 28.dp,
+                onClick = { onMenuItemClick("Feedback") }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -781,16 +793,6 @@ fun SideMenu(
                 iconRes = R.drawable.info,
                 iconSize = 28.dp,
                 onClick = { onMenuItemClick("About") }
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Destroy DALE Button at bottom
-            MenuItem(
-                text = "Destroy DALE",
-                iconRes = R.drawable.bin2,
-                onClick = { onMenuItemClick("Destroy") },
-                isDestructive = true
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1058,115 +1060,77 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                // Action Buttons
+                // Action Images
                 item {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth(0.85f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // GitHub Button
-                        Button(
-                            onClick = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = "https://github.com".toUri()
                                 }
                                 activity.startActivity(intent)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F2A54)
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "🌐",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "GitHub",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF5DADE2),
-                                    fontWeight = FontWeight.Medium
-                                )
                             }
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.github),
+                                contentDescription = "GitHub",
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Text(
+                                text = "GitHub",
+                                fontSize = 10.sp,
+                                color = Color(0xFFB0B0B0)
+                            )
                         }
 
-                        // Donate Button
-                        Button(
-                            onClick = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = "https://buymeacoffee.com".toUri()
                                 }
                                 activity.startActivity(intent)
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F2A54)
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "❤️",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Donate",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF5DADE2),
-                                    fontWeight = FontWeight.Medium
-                                )
                             }
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.donate),
+                                contentDescription = "Donate",
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Text(
+                                text = "Donate",
+                                fontSize = 10.sp,
+                                color = Color(0xFFB0B0B0)
+                            )
                         }
 
-                        // Feedback Button
-                        Button(
-                            onClick = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.clickable {
                                 val intent = Intent(Intent.ACTION_SEND).apply {
                                     type = "message/rfc822"
                                     putExtra(Intent.EXTRA_EMAIL, arrayOf("feedback@dale.app"))
                                     putExtra(Intent.EXTRA_SUBJECT, "DALE Feedback")
                                 }
                                 activity.startActivity(Intent.createChooser(intent, "Send Feedback"))
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F2A54)
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "💬",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Feedback",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF5DADE2),
-                                    fontWeight = FontWeight.Medium
-                                )
                             }
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.feedback),
+                                contentDescription = "Feedback",
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Text(
+                                text = "Feedback",
+                                fontSize = 10.sp,
+                                color = Color(0xFFB0B0B0)
+                            )
                         }
                     }
                 }
@@ -1175,6 +1139,316 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(16.dp))
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun FeedbackScreen(
+    modifier: Modifier = Modifier,
+    onClose: () -> Unit,
+    activity: ComponentActivity
+) {
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var subject by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var emailError by remember { mutableStateOf<String?>(null) }
+    var subjectError by remember { mutableStateOf<String?>(null) }
+    var descriptionError by remember { mutableStateOf<String?>(null) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(Color(0xFF1a1a2e), Color(0xFF16213e))
+                )
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Header with back button
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(bottom = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(40.dp),
+                    enabled = !isSubmitting
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Purple80,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Text(
+                    text = "Feedback",
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Purple80,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                Box(modifier = Modifier.size(40.dp))
+            }
+
+            // Form container
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    Text(
+                        text = "We value your opinion! Tell us about your experience or report an issue.",
+                        fontSize = 14.sp,
+                        color = Color(0xFFB0B0B0),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                    )
+                }
+
+                item {
+                    // Name Field
+                    FeedbackTextField(
+                        value = name,
+                        onValueChange = { 
+                            name = it
+                            if (nameError != null) nameError = null
+                        },
+                        label = "Name",
+                        placeholder = "Enter your name",
+                        isError = nameError != null,
+                        errorText = nameError,
+                        enabled = !isSubmitting
+                    )
+                }
+
+                item {
+                    // Email Field
+                    FeedbackTextField(
+                        value = email,
+                        onValueChange = { 
+                            email = it
+                            if (emailError != null) emailError = null
+                        },
+                        label = "Email",
+                        placeholder = "Enter your email address",
+                        isError = emailError != null,
+                        errorText = emailError,
+                        enabled = !isSubmitting
+                    )
+                }
+
+                item {
+                    // Subject Field
+                    FeedbackTextField(
+                        value = subject,
+                        onValueChange = { 
+                            subject = it
+                            if (subjectError != null) subjectError = null
+                        },
+                        label = "Subject",
+                        placeholder = "Enter subject",
+                        isError = subjectError != null,
+                        errorText = subjectError,
+                        enabled = !isSubmitting
+                    )
+                }
+
+                item {
+                    // Description Field
+                    FeedbackTextField(
+                        value = description,
+                        onValueChange = { 
+                            description = it
+                            if (descriptionError != null) descriptionError = null
+                        },
+                        label = "Description",
+                        placeholder = "Describe your feedback, suggestion, or issue...",
+                        isError = descriptionError != null,
+                        errorText = descriptionError,
+                        singleLine = false,
+                        minLines = 4,
+                        maxLines = 8,
+                        enabled = !isSubmitting
+                    )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Submit Button
+                    Button(
+                        onClick = {
+                            // Validate
+                            var isValid = true
+                            if (name.trim().isEmpty()) {
+                                nameError = "Name cannot be empty"
+                                isValid = false
+                            }
+                            if (email.trim().isEmpty()) {
+                                emailError = "Email cannot be empty"
+                                isValid = false
+                            } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) {
+                                emailError = "Please enter a valid email address"
+                                isValid = false
+                            }
+                            if (subject.trim().isEmpty()) {
+                                subjectError = "Subject cannot be empty"
+                                isValid = false
+                            }
+                            if (description.trim().isEmpty()) {
+                                descriptionError = "Description cannot be empty"
+                                isValid = false
+                            }
+
+                            if (isValid) {
+                                isSubmitting = true
+                                val db = FirebaseDatabase.getInstance()
+                                val ref = db.getReference("feedbacks")
+                                val feedbackId = ref.push().key ?: System.currentTimeMillis().toString()
+                                
+                                val feedbackData = mapOf(
+                                    "id" to feedbackId,
+                                    "name" to name.trim(),
+                                    "email" to email.trim(),
+                                    "subject" to subject.trim(),
+                                    "description" to description.trim(),
+                                    "timestamp" to System.currentTimeMillis()
+                                )
+
+                                ref.child(feedbackId).setValue(feedbackData)
+                                    .addOnSuccessListener {
+                                        isSubmitting = false
+                                        Toast.makeText(context, "Feedback submitted successfully!", Toast.LENGTH_LONG).show()
+                                        onClose()
+                                    }
+                                    .addOnFailureListener { exception ->
+                                        isSubmitting = false
+                                        Toast.makeText(context, "Failed to submit feedback: ${exception.message}", Toast.LENGTH_LONG).show()
+                                    }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .height(50.dp),
+                        shape = RoundedCornerShape(25.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Purple80,
+                            disabledContainerColor = Purple80.copy(alpha = 0.5f)
+                        ),
+                        enabled = !isSubmitting
+                    ) {
+                        if (isSubmitting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color(0xFF1a1a2e),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Text(
+                                text = "Submit Feedback",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1a1a2e)
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(24.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FeedbackTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String,
+    isError: Boolean,
+    errorText: String?,
+    enabled: Boolean = true,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = 1
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(0.9f),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isError) Color(0xFFFF5252) else Purple80
+        )
+
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            placeholder = {
+                Text(
+                    text = placeholder,
+                    color = Color.Gray,
+                    fontSize = 14.sp
+                )
+            },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = singleLine,
+            minLines = minLines,
+            maxLines = maxLines,
+            enabled = enabled,
+            isError = isError,
+            shape = RoundedCornerShape(12.dp),
+            colors = TextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                disabledTextColor = Color.Gray,
+                focusedContainerColor = Color(0xFF0c1b2f),
+                unfocusedContainerColor = Color(0xFF0c1b2f),
+                disabledContainerColor = Color(0xFF0c1b2f).copy(alpha = 0.5f),
+                focusedIndicatorColor = Purple80,
+                unfocusedIndicatorColor = Color(0xFF2A5A8A),
+                errorIndicatorColor = Color(0xFFFF5252),
+                errorContainerColor = Color(0xFF0c1b2f)
+            )
+        )
+
+        if (isError && errorText != null) {
+            Text(
+                text = errorText,
+                color = Color(0xFFFF5252),
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp)
+            )
         }
     }
 }

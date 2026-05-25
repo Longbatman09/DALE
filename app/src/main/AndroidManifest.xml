@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
@@ -50,19 +51,9 @@
             android:label="@string/welcome_activity_title"
             android:theme="@style/Theme.DALE" />
         <activity
-            android:name=".SetupActivity"
-            android:exported="false"
-            android:label="@string/setup_activity_title"
-            android:theme="@style/Theme.DALE" />
-        <activity
             android:name=".AppSelectionActivity"
             android:exported="false"
             android:label="@string/app_selection_activity_title"
-            android:theme="@style/Theme.DALE" />
-        <activity
-            android:name=".LockScreenSetupActivity"
-            android:exported="false"
-            android:label="@string/lock_setup_activity_title"
             android:theme="@style/Theme.DALE" />
         <activity
             android:name=".PasswordSetupActivity"

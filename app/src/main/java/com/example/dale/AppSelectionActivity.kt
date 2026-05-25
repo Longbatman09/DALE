@@ -107,7 +107,7 @@ class AppSelectionActivity : ComponentActivity() {
         }
     }
 
-    fun getInstalledAppsPublic(): List<AppInfo> {
+    fun getInstalledAppsPublic(onPackageFound: (String) -> Unit = {}): List<AppInfo> {
         val apps = mutableListOf<AppInfo>()
         val packageManager = packageManager
         val addedPackages = mutableSetOf<String>()
@@ -115,6 +115,7 @@ class AppSelectionActivity : ComponentActivity() {
         // 1) Get all installed applications (include system apps)
         val installedApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
         for (appInfo in installedApps) {
+            onPackageFound(appInfo.packageName)
             if (packageName == appInfo.packageName) continue
 
             val label = try {
@@ -151,6 +152,7 @@ class AppSelectionActivity : ComponentActivity() {
         for (resolveInfo in resolveInfos) {
             val ai = resolveInfo.activityInfo ?: continue
             val pkg = ai.packageName
+            onPackageFound(pkg)
             if (pkg == packageName) continue
             if (addedPackages.contains(pkg)) continue
 
@@ -192,6 +194,7 @@ class AppSelectionActivity : ComponentActivity() {
             for (resolveInfo in islandResolveInfos) {
                 val ai = resolveInfo.activityInfo ?: continue
                 val pkg = ai.packageName
+                onPackageFound(pkg)
                 if (pkg == packageName) continue
                 if (addedPackages.contains(pkg)) continue
 
@@ -245,6 +248,7 @@ fun AppSelectionScreenWithLoading(
 ) {
     val isLoading = remember { mutableStateOf(!skipInitialLoadingForGroupEdit) }
     val allApps = remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    val currentPackageName = remember { mutableStateOf("") }
     val fadeDurationMs = 350
 
     // Keep loading visible during normal flow, but skip it when returning to edit group name.
@@ -252,7 +256,9 @@ fun AppSelectionScreenWithLoading(
         val startedAt = System.currentTimeMillis()
         try {
             val apps = withContext(Dispatchers.IO) {
-                (activity as? AppSelectionActivity)?.getInstalledAppsPublic() ?: emptyList()
+                (activity as? AppSelectionActivity)?.getInstalledAppsPublic { pkg ->
+                    currentPackageName.value = pkg
+                } ?: emptyList()
             }
             allApps.value = apps
         } catch (_: Exception) {
@@ -289,7 +295,7 @@ fun AppSelectionScreenWithLoading(
             enter = fadeIn(animationSpec = tween(fadeDurationMs)),
             exit = fadeOut(animationSpec = tween(fadeDurationMs))
         ) {
-            SearchingAppsLoadingScreen()
+            SearchingAppsLoadingScreen(currentPackageName.value)
         }
 
         AnimatedVisibility(
@@ -309,7 +315,7 @@ fun AppSelectionScreenWithLoading(
 }
 
 @Composable
-private fun SearchingAppsLoadingScreen() {
+private fun SearchingAppsLoadingScreen(currentPackage: String = "") {
     val dotState = remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -324,15 +330,28 @@ private fun SearchingAppsLoadingScreen() {
             .fillMaxSize()
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
-        Text(
-            text = "Searching apps" + ".".repeat(dotState.intValue),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Purple80,
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(bottom = 14.dp)
-        )
+                .padding(bottom = 16.dp)
+        ) {
+            Text(
+                text = "Searching Apps" + ".".repeat(dotState.intValue),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Purple80
+            )
+            if (currentPackage.isNotBlank()) {
+                Text(
+                    text = currentPackage,
+                    fontSize = 11.sp,
+                    color = Purple80.copy(alpha = 0.5f),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+        }
 
         LinearProgressIndicator(
             modifier = Modifier
@@ -513,7 +532,7 @@ fun AppSelectionScreen(
 
                             SharedPreferencesManager.getInstance(activity!!).savePendingAppGroup(appGroup)
 
-                            val intent = Intent(activity, LockScreenSetupActivity::class.java)
+                            val intent = Intent(activity, PasswordSetupActivity::class.java)
                             intent.putExtra("groupId", appGroup.id)
                             activity.startActivity(intent)
                             activity.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
@@ -1025,7 +1044,7 @@ fun GroupNameScreen(
                     modifier = Modifier.padding(end = 8.dp)
                 )
                 Text(
-                    text = "Proceed to Lock Setup",
+                    text = "Proceed to Authentication Setup",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White
