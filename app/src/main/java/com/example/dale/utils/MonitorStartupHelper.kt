@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
+import android.content.pm.PackageManager
 import androidx.core.net.toUri
 
 object MonitorStartupHelper {
@@ -26,6 +27,15 @@ object MonitorStartupHelper {
         return enabledServices
             .split(':')
             .any { it.equals(expectedService, ignoreCase = true) }
+    }
+
+    fun isAppInstalled(context: Context, packageName: String): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES)
+            true
+        } catch (e: PackageManager.NameNotFoundException) {
+            false
+        }
     }
 
     fun openBatteryOptimizationSettings(context: Context) {

@@ -47,6 +47,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
@@ -116,7 +117,7 @@ fun ChangePasswordScreen(
             else -> null
         }
     }
-    val hapticIntensity = (group?.vibrationIntensity ?: 100).coerceIn(0, 100)
+    val hapticIntensity = sharedPrefs.getGlobalVibrationIntensity().coerceIn(0, 100)
 
     var currentPin by remember { mutableStateOf("") }
     var newPin by remember { mutableStateOf("") }
@@ -369,7 +370,7 @@ fun ChangePasswordScreen(
                         isBackupRegistration -> "Set Backup PIN"
                         isPatternMode -> "Change Pattern"
                         isPasswordMode -> "Change Password"
-                        else -> "Change Password"
+                        else -> "Change PIN"
                     },
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
@@ -549,6 +550,27 @@ fun ChangePasswordScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Top
             ) {
+                Crossfade(
+                    targetState = appIcon,
+                    animationSpec = tween(300),
+                    label = "ChangeCredentialAppIconFade"
+                ) { icon ->
+                    if (icon != null) {
+                        Image(
+                            bitmap = icon,
+                            contentDescription = "$appName icon",
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .border(1.dp, Color(0x334A77B6), RoundedCornerShape(16.dp))
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.size(72.dp))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
                 Text(
                     text = when (step) {
                         1 -> "Enter Current $credentialLabel"
@@ -568,10 +590,19 @@ fun ChangePasswordScreen(
                     modifier = Modifier.padding(top = 8.dp)
                 )
 
-                Spacer(modifier = Modifier.height(32.dp))
-
                 if (isPatternMode) {
-                    Spacer(modifier = Modifier.height(78.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (errorMessage.isNotEmpty()) {
+                        Text(
+                            text = errorMessage,
+                            color = Color(0xFFFF5252),
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
 
                     PatternChangePad(
                         onPatternDrawn = { pattern ->
@@ -587,52 +618,55 @@ fun ChangePasswordScreen(
                         color = Color.Gray,
                         modifier = Modifier.padding(top = 12.dp)
                     )
+
+                    Spacer(modifier = Modifier.height(40.dp))
                 } else {
-                        OutlinedTextField(
-                            value = when (step) {
-                                1 -> currentPin
-                                2 -> newPin
-                                else -> confirmPin
-                            },
-                            onValueChange = { value ->
-                                val trimmed = value.take(32)
-                                when (step) {
-                                    1 -> currentPin = trimmed
-                                    2 -> newPin = trimmed
-                                    else -> confirmPin = trimmed
-                                }
-                                errorMessage = ""
-                            },
-                            singleLine = true,
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Password,
-                                imeAction = ImeAction.Done
-                            ),
-                            label = { Text("Enter $credentialLabel") },
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = Purple80,
-                                unfocusedBorderColor = Color.Gray,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                }
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Error Message
-                if (errorMessage.isNotEmpty()) {
-                    Text(
-                        text = errorMessage,
-                        color = Color(0xFFFF5252),
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(vertical = 8.dp)
+                    OutlinedTextField(
+                        value = when (step) {
+                            1 -> currentPin
+                            2 -> newPin
+                            else -> confirmPin
+                        },
+                        onValueChange = { value ->
+                            val trimmed = value.take(32)
+                            when (step) {
+                                1 -> currentPin = trimmed
+                                2 -> newPin = trimmed
+                                else -> confirmPin = trimmed
+                            }
+                            errorMessage = ""
+                        },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        label = { Text("Enter $credentialLabel") },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Purple80,
+                            unfocusedBorderColor = Color.Gray,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
 
-                Spacer(modifier = Modifier.height(32.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (errorMessage.isNotEmpty()) {
+                        Text(
+                            text = errorMessage,
+                            color = Color(0xFFFF5252),
+                            fontSize = 14.sp,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(32.dp))
+                }
 
                 if (isPasswordMode) {
                     Button(
@@ -669,14 +703,15 @@ fun PatternChangePad(
 ) {
     Card(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(340.dp),
+            .size(280.dp)
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(12.dp)),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF2a2a3e))
     ) {
         PatternLockPad(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(24.dp),
             hapticIntensity = hapticIntensity,
             onPatternDrawn = onPatternDrawn
         )

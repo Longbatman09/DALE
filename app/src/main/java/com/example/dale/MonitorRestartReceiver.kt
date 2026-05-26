@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import android.util.Log
+import com.example.dale.utils.AccessibilityStatusNotifier
 import com.example.dale.utils.SharedPreferencesManager
 
 class MonitorRestartReceiver : BroadcastReceiver() {
@@ -25,6 +26,9 @@ class MonitorRestartReceiver : BroadcastReceiver() {
 
                 if (!enabledServices.split(':').any { it.equals(expectedService, ignoreCase = true) }) {
                     Log.d("MonitorRestartReceiver", "Accessibility service not enabled after boot/update")
+                    AccessibilityStatusNotifier.show(context)
+                } else {
+                    AccessibilityStatusNotifier.cancel(context)
                 }
             }
         }

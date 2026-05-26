@@ -307,7 +307,7 @@ fun PasswordSetupScreen(
         if (group.app2Name.isNotEmpty()) app2Name.value = group.app2Name
         if (group.groupName.isNotEmpty()) groupName.value = group.groupName
     }
-    val hapticIntensity = (appGroup.value?.vibrationIntensity ?: 100).coerceIn(0, 100)
+    val hapticIntensity = sharedPrefs.getGlobalVibrationIntensity().coerceIn(0, 100)
     
     val isSelectingAuth = selectedAuthType.value == null
     val navigateBackToGroupName: () -> Unit = {
@@ -1547,7 +1547,6 @@ fun BiometricBackupCredentialDialog(
         confirmButton = {}
     )
 }
-
 
 
 

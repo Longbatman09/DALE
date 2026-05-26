@@ -219,6 +219,17 @@ class SharedPreferencesManager private constructor(context: Context) {
         sharedPreferences.edit().remove("usage_logs_$groupId").apply()
     }
 
+    fun disableGroupDueToUninstall(groupId: String, uninstalledAppName: String) {
+        getAppGroup(groupId)?.let { existingGroup ->
+            val updatedGroup = existingGroup.copy(
+                isDisabledDueToUninstall = true,
+                uninstalledAppName = uninstalledAppName,
+                isLocked = false // Disable lockscreen for the entire group
+            )
+            saveAppGroup(updatedGroup)
+        }
+    }
+
     private fun formatDuration(ms: Long): String {
         val totalSec = ms / 1000
         val hours = totalSec / 3600
@@ -245,6 +256,25 @@ class SharedPreferencesManager private constructor(context: Context) {
 
     fun setLastSplashVideoTime(timeInMillis: Long) {
         sharedPreferences.edit().putLong(KEY_LAST_SPLASH_VIDEO_TIME, timeInMillis).apply()
+    }
+
+    fun getGlobalVibrationLevel(): String {
+        return sharedPreferences.getString(KEY_GLOBAL_VIBRATION_LEVEL, VIBRATION_LEVEL_MAX)
+            ?: VIBRATION_LEVEL_MAX
+    }
+
+    fun setGlobalVibrationLevel(level: String) {
+        sharedPreferences.edit().putString(KEY_GLOBAL_VIBRATION_LEVEL, level).apply()
+    }
+
+    fun getGlobalVibrationIntensity(): Int {
+        return when (getGlobalVibrationLevel()) {
+            VIBRATION_LEVEL_OFF -> 0
+            VIBRATION_LEVEL_MIN -> 30
+            VIBRATION_LEVEL_MID -> 60
+            VIBRATION_LEVEL_MAX -> 100
+            else -> 100
+        }
     }
     
      /**
@@ -329,6 +359,11 @@ class SharedPreferencesManager private constructor(context: Context) {
         private const val KEY_PROTECTION_ENABLED = "protection_enabled"
         private const val KEY_INTRO_SHOWN = "intro_shown"
         private const val KEY_LAST_SPLASH_VIDEO_TIME = "last_splash_video_time"
+        private const val KEY_GLOBAL_VIBRATION_LEVEL = "global_vibration_level"
+        private const val VIBRATION_LEVEL_OFF = "OFF"
+        private const val VIBRATION_LEVEL_MIN = "MIN"
+        private const val VIBRATION_LEVEL_MID = "MID"
+        private const val VIBRATION_LEVEL_MAX = "MAX"
 
         @Volatile
         private var instance: SharedPreferencesManager? = null

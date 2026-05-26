@@ -15,15 +15,19 @@ import android.content.IntentFilter
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.app.PendingIntent
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.example.dale.utils.AccessibilityStatusNotifier
 import com.example.dale.utils.SharedPreferencesManager
+import com.example.dale.utils.MonitorStartupHelper
 
 @SuppressLint("ForegroundServiceType", "MissingPermission")
 class AppMonitorService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val checkIntervalMs = 400L
+    private val accessibilityCheckIntervalMs = 2000L
     private var isPolling = false
 
     private val lockManager by lazy { AppLockManager.getInstance(this) }
@@ -31,6 +35,7 @@ class AppMonitorService : Service() {
 
     private var lastUsageEventTimestamp = 0L
     private val usageWindowMs = 5000L
+    private var isAccessibilityWarningVisible = false
 
     private val unlockReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -61,6 +66,18 @@ class AppMonitorService : Service() {
         }
     }
 
+    private val accessibilityCheckRunnable = object : Runnable {
+        override fun run() {
+            try {
+                checkAccessibilityStatus()
+            } finally {
+                if (isPolling) {
+                    handler.postDelayed(this, accessibilityCheckIntervalMs)
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -76,6 +93,7 @@ class AppMonitorService : Service() {
         ContextCompat.registerReceiver(this, unlockReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         lastUsageEventTimestamp = System.currentTimeMillis()
+        createNotificationChannel()
         startPolling()
     }
 
@@ -93,6 +111,7 @@ class AppMonitorService : Service() {
         try {
             unregisterReceiver(unlockReceiver)
         } catch (_: Exception) {}
+        cancelAccessibilityWarning()
         super.onDestroy()
     }
 
@@ -102,11 +121,37 @@ class AppMonitorService : Service() {
         if (isPolling) return
         isPolling = true
         handler.post(appCheckRunnable)
+        handler.post(accessibilityCheckRunnable)
     }
 
     private fun stopPolling() {
         isPolling = false
         handler.removeCallbacks(appCheckRunnable)
+        handler.removeCallbacks(accessibilityCheckRunnable)
+    }
+
+    private fun checkAccessibilityStatus() {
+        if (!sharedPrefs.isProtectionEnabled()) {
+            cancelAccessibilityWarning()
+            return
+        }
+
+        val isEnabled = MonitorStartupHelper.isAccessibilityServiceEnabled(this)
+        if (!isEnabled && !isAccessibilityWarningVisible) {
+            showAccessibilityWarning()
+        } else if (isEnabled && isAccessibilityWarningVisible) {
+            cancelAccessibilityWarning()
+        }
+    }
+
+    private fun showAccessibilityWarning() {
+        AccessibilityStatusNotifier.show(this)
+        isAccessibilityWarningVisible = true
+    }
+
+    private fun cancelAccessibilityWarning() {
+        AccessibilityStatusNotifier.cancel(this)
+        isAccessibilityWarningVisible = false
     }
 
     private fun pollForegroundApp() {
@@ -201,10 +246,10 @@ class AppMonitorService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "AppMonitorServiceChannel"
-        private const val NOTIFICATION_ID = 1001
-        const val ACTION_APP_UNLOCKED = "com.example.dale.APP_UNLOCKED"
         const val ACTION_APP_UNLOCKING = "com.example.dale.APP_UNLOCKING"
+        const val ACTION_APP_UNLOCKED = "com.example.dale.APP_UNLOCKED"
         const val ACTION_UNINSTALL_AUTH_GRANTED = "com.example.dale.UNINSTALL_AUTH_GRANTED"
+        private const val CHANNEL_ID = "AppMonitorServiceChannel"
+        private const val WARNING_NOTIFICATION_ID = 999
     }
 }

@@ -2,6 +2,8 @@ package com.example.dale
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -9,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
@@ -40,6 +44,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -52,6 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
@@ -79,14 +86,34 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.example.dale.ui.theme.DALETheme
 import com.example.dale.ui.theme.Purple40
 import com.example.dale.ui.theme.Purple80
+import com.example.dale.utils.performKeypadHaptic
+import com.example.dale.utils.AccessibilityStatusNotifier
 import com.example.dale.utils.MonitorStartupHelper
 import com.example.dale.utils.SharedPreferencesManager
 import com.google.firebase.database.FirebaseDatabase
-import com.google.firebase.database.ServerValue
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 private const val FIREBASE_DATABASE_URL = "https://dualapplockexecutor-default-rtdb.firebaseio.com/"
+private const val LOCAL_FEEDBACK_PREFS = "dale_feedback_history"
+private const val LOCAL_FEEDBACK_HISTORY_KEY = "feedback_history"
+private const val FIREBASE_FEEDBACK_DATE_FORMAT = "dd-MM-yyyy"
+
+private data class FeedbackHistoryEntry(
+    val id: String = "",
+    val name: String = "",
+    val email: String = "",
+    val title: String = "",
+    val description: String = "",
+    val createdAtMillis: Long = 0L,
+    val status: String = "sent"
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -121,14 +148,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Accessibility service is now the only detection method
-        // It will automatically start if enabled in accessibility settings
+        AccessibilityStatusNotifier.sync(this)
     }
 }
 
 @Composable
 fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var hasNotificationPermission by remember { mutableStateOf(isNotificationPermissionGranted(context)) }
     var hasAccessibility by remember { mutableStateOf(MonitorStartupHelper.isAccessibilityServiceEnabled(context)) }
     var hasBattery by remember { mutableStateOf(MonitorStartupHelper.isIgnoringBatteryOptimizations(context)) }
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -145,11 +172,29 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
     }
 
     LaunchedEffect(refreshKey) {
+        hasNotificationPermission = isNotificationPermissionGranted(context)
         hasAccessibility = MonitorStartupHelper.isAccessibilityServiceEnabled(context)
         hasBattery = MonitorStartupHelper.isIgnoringBatteryOptimizations(context)
+        AccessibilityStatusNotifier.sync(context)
     }
 
     when {
+        !hasNotificationPermission -> PermissionWallScreen(
+            modifier = modifier,
+            iconRes = R.drawable.noti,
+            title = "Enable Notifications",
+            description = "DALE needs notifications to warn you when accessibility protection is turned off.\n\nAllow notifications so this warning can stay visible until protection is restored.",
+            buttonText = "Allow Notifications",
+            onAction = {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        10_401
+                    )
+                }
+            }
+        )
         !hasAccessibility -> PermissionWallScreen(
             modifier = modifier,
             iconRes = R.drawable.accesibility,
@@ -181,6 +226,14 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
         )
         else -> HomeScreen(modifier = modifier, activity = activity)
     }
+}
+
+private fun isNotificationPermissionGranted(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
 }
 
 @Composable
@@ -284,16 +337,46 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
     var refreshTrigger by remember { mutableStateOf(0) }
     var isMenuOpen by remember { mutableStateOf(false) }
     var showDestroyConfirmation by remember { mutableStateOf(false) }
+    var showDestroyGroupConfirmation by remember { mutableStateOf<AppGroup?>(null) }
     var showDestroyingScreen by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
-    var showFeedbackDialog by remember { mutableStateOf(false) }
+    var showFeedback by remember { mutableStateOf(false) }
+    var showTips by remember { mutableStateOf(false) }
+    var showVibrationDialog by remember { mutableStateOf(false) }
     var protectionActive by remember { mutableStateOf(false) }
     var protectionEnabled by remember { mutableStateOf(sharedPrefs.isProtectionEnabled()) }
+    var vibrationLevel by remember { mutableStateOf(sharedPrefs.getGlobalVibrationLevel()) }
     var showProtectionDisableConfirmation by remember { mutableStateOf(false) }
 
     // Refresh groups when screen is visible
     LaunchedEffect(refreshTrigger) {
-        allGroups.value = sharedPrefs.getAllAppGroups()
+        val currentGroups = sharedPrefs.getAllAppGroups()
+        val updatedGroups = currentGroups.map { group ->
+            val isApp1Installed = MonitorStartupHelper.isAppInstalled(context, group.app1PackageName)
+            val isApp2Installed = MonitorStartupHelper.isAppInstalled(context, group.app2PackageName)
+
+            if (!isApp1Installed && !group.isDisabledDueToUninstall) {
+                val uninstalledAppName = group.app1Name.ifBlank { group.app1PackageName }
+                sharedPrefs.disableGroupDueToUninstall(group.id, uninstalledAppName)
+                group.copy(
+                    isDisabledDueToUninstall = true,
+                    uninstalledAppName = uninstalledAppName,
+                    isLocked = false
+                )
+            } else if (!isApp2Installed && !group.isDisabledDueToUninstall) {
+                val uninstalledAppName = group.app2Name.ifBlank { group.app2PackageName }
+                sharedPrefs.disableGroupDueToUninstall(group.id, uninstalledAppName)
+                group.copy(
+                    isDisabledDueToUninstall = true,
+                    uninstalledAppName = uninstalledAppName,
+                    isLocked = false
+                )
+            } else {
+                group
+            }
+        }
+        allGroups.value = updatedGroups // Update the state
+        vibrationLevel = sharedPrefs.getGlobalVibrationLevel()
     }
 
     // Add a listener to refresh when activity resumes
@@ -387,10 +470,52 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
         )
     }
 
-    if (showFeedbackDialog) {
-        FeedbackDialog(
-            onDismiss = { showFeedbackDialog = false },
-            onSubmitted = { showFeedbackDialog = false }
+    // Destroy Group Confirmation Dialog
+    if (showDestroyGroupConfirmation != null) {
+        AlertDialog(
+            onDismissRequest = { showDestroyGroupConfirmation = null },
+            title = {
+                Text(
+                    "Destroy Group?",
+                    color = Color(0xFFFF5252),
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    "The app \"${showDestroyGroupConfirmation?.uninstalledAppName}\" is no longer installed. " +
+                            "This group is disabled. Do you want to permanently delete this group?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDestroyGroupConfirmation?.let { groupToDestroy ->
+                            sharedPrefs.deleteAppGroup(groupToDestroy.id)
+                            allGroups.value = sharedPrefs.getAllAppGroups() // Refresh groups
+                        }
+                        showDestroyGroupConfirmation = null
+                    }
+                ) {
+                    Text("DESTROY GROUP", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDestroyGroupConfirmation = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showVibrationDialog) {
+        VibrationStrengthDialog(
+            currentLevel = vibrationLevel,
+            onDismiss = { showVibrationDialog = false },
+            onLevelSelected = { level ->
+                sharedPrefs.setGlobalVibrationLevel(level)
+                vibrationLevel = level
+            }
         )
     }
 
@@ -411,12 +536,26 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
         return
     }
 
-    // Show About Screen in full screen instead of dialog
-    if (showAbout) {
+    // Show Tips Screen in full screen instead of dialog
+    if (showTips) {
+        TipsScreen(
+            modifier = modifier,
+            onClose = { showTips = false }
+        )
+    } else if (showAbout) {
         AboutScreen(
             modifier = modifier,
             onClose = { showAbout = false },
+            onFeedbackClick = {
+                showAbout = false
+                showFeedback = true
+            },
             activity = hostActivity
+        )
+    } else if (showFeedback) {
+        FeedbackScreen(
+            modifier = modifier,
+            onClose = { showFeedback = false }
         )
     } else {
         // Main content
@@ -542,16 +681,17 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
                 ) {
                     items(allGroups.value) { group ->
                         GroupCard(
-                            groupName = group.groupName,
-                            app1Package = group.app1PackageName,
-                            app2Package = group.app2PackageName,
-                            isLocked = group.isLocked,
-                            onClick = {
-                                // Open GroupSettingsActivity
-                                val intent = Intent(activity, GroupSettingsActivity::class.java)
-                                intent.putExtra("GROUP_ID", group.id)
-                                intent.putExtra("GROUP_NAME", group.groupName)
-                                activity.startActivity(intent)
+                            group = group, // Pass the whole group object
+                            onClick = { clickedGroup ->
+                                if (!clickedGroup.isDisabledDueToUninstall) {
+                                    val intent = Intent(activity, GroupSettingsActivity::class.java)
+                                    intent.putExtra("GROUP_ID", clickedGroup.id)
+                                    intent.putExtra("GROUP_NAME", clickedGroup.groupName)
+                                    activity.startActivity(intent)
+                                }
+                            },
+                            onDisabledGroupClick = { clickedGroup ->
+                                showDestroyGroupConfirmation = clickedGroup
                             },
                             context = activity
                         )
@@ -586,15 +726,15 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
          ) {
              SideMenu(
                  onClose = { isMenuOpen = false },
+                 vibrationLevel = vibrationLevel,
                  onMenuItemClick = { menuItem ->
-                     if (menuItem == "Destroy") {
-                         showDestroyConfirmation = true
-                     } else if (menuItem == "About") {
-                         showAbout = true
-                     } else if (menuItem == "Feedback") {
-                         showFeedbackDialog = true
+                     when (menuItem) {
+                         "Tips" -> showTips = true
+                         "About" -> showAbout = true
+                         "Feedback" -> showFeedback = true
+                         "Vibration Strength" -> showVibrationDialog = true
                      }
-                     isMenuOpen = false
+                    isMenuOpen = false
                  }
              )
          }
@@ -627,13 +767,15 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
 
 @Composable
 fun GroupCard(
-    groupName: String,
-    app1Package: String,
-    app2Package: String,
-    isLocked: Boolean,
-    onClick: () -> Unit,
+    group: AppGroup,
+    onClick: (AppGroup) -> Unit,
+    onDisabledGroupClick: (AppGroup) -> Unit,
     context: Context
 ) {
+    val groupName = group.groupName
+    val app1Package = group.app1PackageName
+    val app2Package = group.app2PackageName
+
     // Load app icons
     val app1Icon = remember(app1Package) {
         try {
@@ -654,11 +796,17 @@ fun GroupCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable {
+                if (group.isDisabledDueToUninstall) {
+                    onDisabledGroupClick(group)
+                } else {
+                    onClick(group)
+                }
+            }
             .shadow(elevation = 4.dp, shape = RoundedCornerShape(8.dp)),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF0f3460)
+            containerColor = if (group.isDisabledDueToUninstall) Color(0xFF1a1a2e) else Color(0xFF0f3460)
         )
     ) {
         Row(
@@ -674,13 +822,13 @@ fun GroupCard(
                     .padding(end = 8.dp)
             ) {
                 Text(
-                    text = groupName,
+                    text = if (group.isDisabledDueToUninstall) "$groupName (Disabled)" else groupName,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White
+                    color = if (group.isDisabledDueToUninstall) Color.Gray else Color.White
                 )
                 Text(
-                    text = "$app1Package + $app2Package",
+                    text = if (group.isDisabledDueToUninstall) "App uninstalled: ${group.uninstalledAppName}" else "$app1Package + $app2Package",
                     fontSize = 11.sp,
                     color = Color.Gray,
                     modifier = Modifier.padding(top = 4.dp)
@@ -717,6 +865,7 @@ fun GroupCard(
 @Composable
 fun SideMenu(
     onClose: () -> Unit,
+    vibrationLevel: String,
     onMenuItemClick: (String) -> Unit
 ) {
     Box(
@@ -749,15 +898,11 @@ fun SideMenu(
             Spacer(modifier = Modifier.height(8.dp))
 
 
-            Spacer(modifier = Modifier.weight(1f))
-
-
-            // About Button
             MenuItem(
-                text = "About",
-                iconRes = R.drawable.info,
+                text = "Vibration Strength: $vibrationLevel",
+                iconRes = R.drawable.vibraton,
                 iconSize = 28.dp,
-                onClick = { onMenuItemClick("About") }
+                onClick = { onMenuItemClick("Vibration Strength") }
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -771,13 +916,23 @@ fun SideMenu(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Destroy DALE Button at bottom
             MenuItem(
-                text = "Destroy DALE",
-                iconRes = R.drawable.bin2,
-                onClick = { onMenuItemClick("Destroy") },
-                isDestructive = true
+                text = "Tips",
+                iconRes = R.drawable.bulb,
+                iconSize = 28.dp,
+                onClick = { onMenuItemClick("Tips") }
             )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            // About Button
+            MenuItem(
+                text = "About",
+                iconRes = R.drawable.info,
+                iconSize = 28.dp,
+                onClick = { onMenuItemClick("About") }
+            )
+
 
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -825,6 +980,79 @@ fun MenuItem(
             fontWeight = if (isDestructive) FontWeight.Bold else FontWeight.Medium
         )
     }
+}
+
+@Composable
+fun VibrationStrengthDialog(
+    currentLevel: String,
+    onDismiss: () -> Unit,
+    onLevelSelected: (String) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val options = listOf("OFF", "MIN", "MID", "MAX")
+    val initialIndex = options.indexOf(currentLevel).takeIf { it >= 0 } ?: 3
+    var sliderIndex by remember(currentLevel) { mutableStateOf(initialIndex) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Vibration Strength",
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Current: ${options[sliderIndex]}",
+                    fontSize = 14.sp,
+                    color = Color(0xFFB0BEC5),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Slider(
+                    value = sliderIndex.toFloat(),
+                    onValueChange = { value ->
+                        val newIndex = value.roundToInt().coerceIn(0, options.lastIndex)
+                        if (newIndex != sliderIndex) {
+                            sliderIndex = newIndex
+                            val level = options[newIndex]
+                            onLevelSelected(level)
+                            val previewIntensity = when (level) {
+                                "OFF" -> 0
+                                "MIN" -> 30
+                                "MID" -> 60
+                                else -> 100
+                            }
+                            performKeypadHaptic(context, intensityPercent = previewIntensity)
+                        }
+                    },
+                    valueRange = 0f..3f,
+                    steps = 2
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    options.forEach { level ->
+                        val isSelected = level == options[sliderIndex]
+                        Text(
+                            text = level,
+                            fontSize = 12.sp,
+                            color = if (isSelected) Color.White else Color(0xFFB0BEC5),
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 @Composable
@@ -886,9 +1114,118 @@ fun DestroyingLoadingScreen(
 }
 
 @Composable
-fun FeedbackDialog(
-    onDismiss: () -> Unit,
-    onSubmitted: () -> Unit
+fun TipsScreen(
+    modifier: Modifier = Modifier,
+    onClose: () -> Unit
+) {
+    val tips = listOf(
+        "Single gate for dual apps" to
+            "Use Dual Messenger to create a cloned app and add both the original and the clone to the same group.",
+        "Use App Logs for timing" to
+            "Open Group Settings and use App Logs to see exactly when you entered and exited each protected app.",
+        "Use DALE like Digital Wellbeing" to
+            "Create focused groups to limit distractions and use protection to keep usage intentional.",
+        "Uninstall protection" to
+            "Enable Uninstall Protection for both apps in the group so uninstalling requires credentials.",
+        "Keep protection active" to
+            "Leave Protection ON and keep Accessibility enabled with Battery Optimization disabled for reliable locking.",
+        "Hide DALE for privacy" to
+            "Use your phone or launcher hide-apps feature to keep DALE discreet."
+    )
+    var expandedIndex by remember { mutableStateOf(0) }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(Color(0xFF1a1a2e), Color(0xFF16213e))
+                )
+            )
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .background(Color(0xFF0f3460))
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
+
+                Text(
+                    text = "Tips",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                tips.forEachIndexed { index, tip ->
+                    val isExpanded = expandedIndex == index
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                expandedIndex = if (isExpanded) -1 else index
+                            },
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0f3460)),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = tip.first,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
+                            }
+
+                            AnimatedVisibility(visible = isExpanded) {
+                                Text(
+                                    text = tip.second,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFB0B0B0),
+                                    modifier = Modifier.padding(top = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun FeedbackScreen(
+    modifier: Modifier = Modifier,
+    onClose: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -897,6 +1234,7 @@ fun FeedbackDialog(
     var description by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var feedbackHistory by remember { mutableStateOf(loadFeedbackHistory(context)) }
 
     val trimmedName = name.trim()
     val trimmedEmail = email.trim()
@@ -909,147 +1247,330 @@ fun FeedbackDialog(
         trimmedDescription.isNotEmpty() &&
         !isSubmitting
 
-    AlertDialog(
-        onDismissRequest = {
-            if (!isSubmitting) onDismiss()
-        },
-        containerColor = Color(0xFF03193B),
-        title = {
-            Text(
-                text = "Feedback",
-                color = Color.White,
-                fontWeight = FontWeight.Bold
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(Color(0xFF1a1a2e), Color(0xFF16213e))
+                )
             )
-        },
-        text = {
-            Column(
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .height(56.dp)
+                    .background(Color(0xFF0f3460))
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = {
-                        name = it.take(80)
-                        errorMessage = null
-                    },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    enabled = !isSubmitting,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                IconButton(
+                    onClick = onClose,
+                    enabled = !isSubmitting
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
+                    )
+                }
 
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = {
-                        email = it.take(120)
-                        errorMessage = null
-                    },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    enabled = !isSubmitting,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    modifier = Modifier.fillMaxWidth()
+                Text(
+                    text = "Feedback",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.padding(start = 8.dp)
                 )
+            }
 
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = {
-                        title = it.take(120)
-                        errorMessage = null
-                    },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    enabled = !isSubmitting,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    Text(
+                        text = "Send Feedback",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Purple80
+                    )
+                }
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = {
-                        description = it.take(2000)
-                        errorMessage = null
-                    },
-                    label = { Text("Description") },
-                    minLines = 4,
-                    maxLines = 6,
-                    enabled = !isSubmitting,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Default
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                item {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = {
+                                name = it.take(80)
+                                errorMessage = null
+                            },
+                            label = { Text("Name") },
+                            singleLine = true,
+                            enabled = !isSubmitting,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = {
+                                email = it.take(120)
+                                errorMessage = null
+                            },
+                            label = { Text("Email") },
+                            singleLine = true,
+                            enabled = !isSubmitting,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Email,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = title,
+                            onValueChange = {
+                                title = it.take(120)
+                                errorMessage = null
+                            },
+                            label = { Text("Title") },
+                            singleLine = true,
+                            enabled = !isSubmitting,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = description,
+                            onValueChange = {
+                                description = it.take(2000)
+                                errorMessage = null
+                            },
+                            label = { Text("Description") },
+                            minLines = 5,
+                            maxLines = 8,
+                            enabled = !isSubmitting,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Default
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
 
                 if (errorMessage != null) {
-                    Text(
-                        text = errorMessage ?: "",
-                        color = Color(0xFFFF6B6B),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                enabled = canSubmit,
-                onClick = {
-                    if (!canSubmit) {
-                        errorMessage = if (!isEmailValid) "Enter a valid email address" else "Fill all fields"
-                        return@Button
+                    item {
+                        Text(
+                            text = errorMessage ?: "",
+                            color = Color(0xFFFF6B6B),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
-
-                    isSubmitting = true
-                    errorMessage = null
-
-                    val feedback = mapOf(
-                        "name" to trimmedName,
-                        "email" to trimmedEmail,
-                        "title" to trimmedTitle,
-                        "description" to trimmedDescription,
-                        "createdAt" to ServerValue.TIMESTAMP,
-                        "source" to "android"
-                    )
-
-                    FirebaseDatabase
-                        .getInstance(FIREBASE_DATABASE_URL)
-                        .reference
-                        .child("feedback")
-                        .push()
-                        .setValue(feedback)
-                        .addOnSuccessListener {
-                            isSubmitting = false
-                            Toast.makeText(context, "Feedback sent", Toast.LENGTH_SHORT).show()
-                            onSubmitted()
-                        }
-                        .addOnFailureListener { exception ->
-                            isSubmitting = false
-                            errorMessage = exception.localizedMessage ?: "Unable to send feedback"
-                        }
                 }
-            ) {
-                Text(if (isSubmitting) "Sending..." else "Send")
-            }
-        },
-        dismissButton = {
-            TextButton(
-                enabled = !isSubmitting,
-                onClick = onDismiss
-            ) {
-                Text("Cancel")
+
+                item {
+                    Button(
+                        enabled = canSubmit,
+                        onClick = {
+                            if (!canSubmit) {
+                                errorMessage = if (!isEmailValid) "Enter a valid email address" else "Fill all fields"
+                                return@Button
+                            }
+
+                            isSubmitting = true
+                            errorMessage = null
+
+                            val createdAtMillis = System.currentTimeMillis()
+                            val localEntry = FeedbackHistoryEntry(
+                                id = createdAtMillis.toString(),
+                                name = trimmedName,
+                                email = trimmedEmail,
+                                title = trimmedTitle,
+                                description = trimmedDescription,
+                                createdAtMillis = createdAtMillis,
+                                status = "sent"
+                            )
+                            val feedback = mapOf(
+                                "name" to trimmedName,
+                                "email" to trimmedEmail,
+                                "title" to trimmedTitle,
+                                "description" to trimmedDescription,
+                                "createdAt" to formatFeedbackFirebaseDate(createdAtMillis),
+                                "deviceName" to getFeedbackDeviceName(),
+                                "source" to "android"
+                            )
+
+                            FirebaseDatabase
+                                .getInstance(FIREBASE_DATABASE_URL)
+                                .reference
+                                .child("feedback")
+                                .push()
+                                .setValue(feedback)
+                                .addOnSuccessListener {
+                                    isSubmitting = false
+                                    val updatedHistory = saveFeedbackHistoryEntry(context, localEntry)
+                                    feedbackHistory = updatedHistory
+                                    name = ""
+                                    email = ""
+                                    title = ""
+                                    description = ""
+                                    Toast.makeText(context, "Feedback sent", Toast.LENGTH_SHORT).show()
+                                }
+                                .addOnFailureListener { exception ->
+                                    isSubmitting = false
+                                    errorMessage = exception.localizedMessage ?: "Unable to send feedback"
+                                }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(if (isSubmitting) "Sending..." else "Send Feedback")
+                    }
+                }
+
+                item {
+                    HorizontalDivider(
+                        color = Color.White.copy(alpha = 0.18f),
+                        thickness = 1.dp
+                    )
+                }
+
+                item {
+                    Text(
+                        text = "Feedback History",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Purple80
+                    )
+                }
+
+                if (feedbackHistory.isEmpty()) {
+                    item {
+                        Text(
+                            text = "No feedback submitted yet.",
+                            fontSize = 14.sp,
+                            color = Color(0xFFB0B0B0)
+                        )
+                    }
+                } else {
+                    items(feedbackHistory, key = { it.id }) { entry ->
+                        FeedbackHistoryCard(entry = entry)
+                    }
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(20.dp))
+                }
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun FeedbackHistoryCard(entry: FeedbackHistoryEntry) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF24324D))
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = entry.title,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Text(
+                    text = entry.status.uppercase(),
+                    fontSize = 10.sp,
+                    color = Color(0xFF9BD79B),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Text(
+                text = formatFeedbackDate(entry.createdAtMillis),
+                fontSize = 11.sp,
+                color = Color(0xFF9FB2CC)
+            )
+
+            Text(
+                text = entry.description,
+                fontSize = 13.sp,
+                color = Color(0xFFD6D6D6),
+                maxLines = 3
+            )
+        }
+    }
+}
+
+private fun loadFeedbackHistory(context: Context): List<FeedbackHistoryEntry> {
+    val prefs = context.getSharedPreferences(LOCAL_FEEDBACK_PREFS, Context.MODE_PRIVATE)
+    val json = prefs.getString(LOCAL_FEEDBACK_HISTORY_KEY, null) ?: return emptyList()
+    return try {
+        val type = object : TypeToken<List<FeedbackHistoryEntry>>() {}.type
+        Gson().fromJson<List<FeedbackHistoryEntry>>(json, type).orEmpty()
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
+private fun saveFeedbackHistoryEntry(
+    context: Context,
+    entry: FeedbackHistoryEntry
+): List<FeedbackHistoryEntry> {
+    val updatedHistory = (listOf(entry) + loadFeedbackHistory(context)).take(50)
+    val prefs = context.getSharedPreferences(LOCAL_FEEDBACK_PREFS, Context.MODE_PRIVATE)
+    prefs.edit()
+        .putString(LOCAL_FEEDBACK_HISTORY_KEY, Gson().toJson(updatedHistory))
+        .apply()
+    return updatedHistory
+}
+
+private fun formatFeedbackDate(timestamp: Long): String {
+    if (timestamp <= 0L) return ""
+    return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(timestamp))
+}
+
+private fun formatFeedbackFirebaseDate(timestamp: Long): String {
+    return SimpleDateFormat(FIREBASE_FEEDBACK_DATE_FORMAT, Locale.getDefault()).format(Date(timestamp))
+}
+
+private fun getFeedbackDeviceName(): String {
+    val manufacturer = Build.MANUFACTURER.orEmpty().trim()
+    val model = Build.MODEL.orEmpty().trim()
+    return when {
+        manufacturer.isBlank() -> model.ifBlank { "Unknown Android device" }
+        model.startsWith(manufacturer, ignoreCase = true) -> model
+        model.isBlank() -> manufacturer
+        else -> "$manufacturer $model"
+    }
 }
 
 @Composable
 fun AboutScreen(
     modifier: Modifier = Modifier,
     onClose: () -> Unit,
+    onFeedbackClick: () -> Unit,
     activity: ComponentActivity
 ) {
     Box(
@@ -1123,7 +1644,7 @@ fun AboutScreen(
                 // Description
                 item {
                     Text(
-                        text = "Dual App Lock Engine",
+                        text = "Dual App Lock Executor",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFFB0B0B0),
@@ -1207,114 +1728,48 @@ fun AboutScreen(
 
                 // Action Buttons
                 item {
-                    Column(
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth(0.85f),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.SpaceAround, // Distribute images horizontally
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // GitHub Button
-                        Button(
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    data = "https://github.com".toUri()
-                                }
-                                activity.startActivity(intent)
-                            },
+                        // GitHub Image
+                        Image(
+                            painter = painterResource(id = R.drawable.github),
+                            contentDescription = "GitHub",
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F2A54)
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "GitHub",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF5DADE2),
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
+                                .size(48.dp) // Adjust size as needed
+                                .clickable {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        data = "https://github.com".toUri()
+                                    }
+                                    activity.startActivity(intent)
+                                }
+                        )
 
-                        // Donate Button
-                        Button(
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW).apply {
-                                    data = "https://buymeacoffee.com".toUri()
-                                }
-                                activity.startActivity(intent)
-                            },
+                        // Donate Image
+                        Image(
+                            painter = painterResource(id = R.drawable.donate),
+                            contentDescription = "Donate",
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F2A54)
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "❤️",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Donate",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF5DADE2),
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
+                                .size(48.dp) // Adjust size as needed
+                                .clickable {
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        data = "https://buymeacoffee.com".toUri()
+                                    }
+                                    activity.startActivity(intent)
+                                }
+                        )
 
-                        // Feedback Button
-                        Button(
-                            onClick = {
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "message/rfc822"
-                                    putExtra(Intent.EXTRA_EMAIL, arrayOf("feedback@dale.app"))
-                                    putExtra(Intent.EXTRA_SUBJECT, "DALE Feedback")
-                                }
-                                activity.startActivity(Intent.createChooser(intent, "Send Feedback"))
-                            },
+                        // Feedback Image
+                        Image(
+                            painter = painterResource(id = R.drawable.feedback),
+                            contentDescription = "Feedback",
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(40.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F2A54)
-                            ),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Feedback",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF5DADE2),
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
-                        }
+                                .size(48.dp) // Adjust size as needed
+                                .clickable(onClick = onFeedbackClick)
+                        )
                     }
                 }
 

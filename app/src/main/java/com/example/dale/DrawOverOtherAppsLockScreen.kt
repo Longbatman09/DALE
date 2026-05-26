@@ -466,6 +466,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
 
     override fun onDestroy() {
         relaunchHandler.removeCallbacksAndMessages(null)
+        DALEAppLockManager.isLockScreenShown.set(false)
         super.onDestroy()
     }
 
@@ -550,7 +551,7 @@ fun LockScreenContent(
     val isPatternMode = normalizedLockType == "PATTERN"
     val isPinMode = normalizedLockType == "PIN"
     val expectedPinLength = (if (appInfo.pinLength > 0) appInfo.pinLength else 4).coerceIn(1, 10)
-    val hapticIntensity = (appGroup?.vibrationIntensity ?: 100).coerceIn(0, 100)
+    val hapticIntensity = sharedPrefs.getGlobalVibrationIntensity().coerceIn(0, 100)
 
     suspend fun verifyAndUnlock(inputCredential: String) {
         if (isVerifying) return

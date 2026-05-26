@@ -21,5 +21,7 @@ data class AppGroup(
     val app1PinLength: Int = 0,
     val app2PinLength: Int = 0,
     val vibrationIntensity: Int? = null,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val isDisabledDueToUninstall: Boolean = false,
+    val uninstalledAppName: String? = null
 )

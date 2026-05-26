@@ -12,6 +12,7 @@ import android.view.inputmethod.InputMethodManager
 import androidx.core.content.getSystemService
 import com.example.dale.ActivityLogEntry
 import com.example.dale.utils.SharedPreferencesManager
+import com.example.dale.utils.AccessibilityStatusNotifier
 import com.example.dale.utils.AppActivityLogger
 import com.example.dale.utils.DetectionMethod
 import com.example.dale.utils.DetectionMethodManager
@@ -187,6 +188,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
 
              Log.d(TAG, "Accessibility service connected")
              Log.d("AppDetection", "✅ ACCESSIBILITY_SERVICE_CONNECTED - Now listening to app events")
+             AccessibilityStatusNotifier.cancel(this)
              DALEAppLockManager.resetRestartAttempts(TAG)
          } catch (e: Exception) {
              Log.e(TAG, "Error in onServiceConnected", e)
@@ -421,7 +423,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
             groupId = groupId ?: "",
             appName = appName
         )
-        uninstallApprovalUntilMs = System.currentTimeMillis() + 15_000L
+        uninstallApprovalUntilMs = System.currentTimeMillis() + 60_000L
         DALEAppLockManager.isLockScreenShown.set(false)
 
         Log.d(TAG, "Uninstall credentials accepted for $appName ($packageName); approval window active")
@@ -445,7 +447,8 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
         if (!lowerPackage.contains("packageinstaller")) return false
 
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
-            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
         ) {
             return false
         }
@@ -484,23 +487,53 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
 
         val app1Name = resolveAppLabel(group.app1PackageName, group.app1Name).lowercase(Locale.ROOT)
         val app2Name = resolveAppLabel(group.app2PackageName, group.app2Name).lowercase(Locale.ROOT)
-        return (app1Name.isNotBlank() && lower.contains(app1Name)) ||
-            (app2Name.isNotBlank() && lower.contains(app2Name))
+        val app1Package = group.app1PackageName.lowercase(Locale.ROOT)
+        val app2Package = group.app2PackageName.lowercase(Locale.ROOT)
+        val app1Enabled = isUninstallProtectionEnabled(group, group.app1PackageName)
+        val app2Enabled = isUninstallProtectionEnabled(group, group.app2PackageName)
+        return (app1Enabled && app1Name.isNotBlank() && lower.contains(app1Name)) ||
+            (app1Enabled && app1Package.isNotBlank() && lower.contains(app1Package)) ||
+            (app2Enabled && app2Name.isNotBlank() && lower.contains(app2Name)) ||
+            (app2Enabled && app2Package.isNotBlank() && lower.contains(app2Package))
     }
 
     private fun resolveUninstallTarget(windowText: String, group: AppGroup): UninstallChallenge? {
         val lower = windowText.lowercase(Locale.ROOT)
         val app1Name = resolveAppLabel(group.app1PackageName, group.app1Name)
         val app2Name = resolveAppLabel(group.app2PackageName, group.app2Name)
+        val app1Package = group.app1PackageName
+        val app2Package = group.app2PackageName
 
         return when {
-            app1Name.isNotBlank() && lower.contains(app1Name.lowercase(Locale.ROOT)) -> {
+            isUninstallProtectionEnabled(group, group.app1PackageName) &&
+                app1Name.isNotBlank() &&
+                lower.contains(app1Name.lowercase(Locale.ROOT)) -> {
                 UninstallChallenge(group.app1PackageName, group.id, app1Name)
             }
-            app2Name.isNotBlank() && lower.contains(app2Name.lowercase(Locale.ROOT)) -> {
+            isUninstallProtectionEnabled(group, group.app1PackageName) &&
+                app1Package.isNotBlank() &&
+                lower.contains(app1Package.lowercase(Locale.ROOT)) -> {
+                UninstallChallenge(group.app1PackageName, group.id, app1Name.ifBlank { app1Package })
+            }
+            isUninstallProtectionEnabled(group, group.app2PackageName) &&
+                app2Name.isNotBlank() &&
+                lower.contains(app2Name.lowercase(Locale.ROOT)) -> {
                 UninstallChallenge(group.app2PackageName, group.id, app2Name)
             }
+            isUninstallProtectionEnabled(group, group.app2PackageName) &&
+                app2Package.isNotBlank() &&
+                lower.contains(app2Package.lowercase(Locale.ROOT)) -> {
+                UninstallChallenge(group.app2PackageName, group.id, app2Name.ifBlank { app2Package })
+            }
             else -> null
+        }
+    }
+
+    private fun isUninstallProtectionEnabled(group: AppGroup, packageName: String): Boolean {
+        return when (packageName) {
+            group.app1PackageName -> group.app1UninstallProtectionEnabled != false
+            group.app2PackageName -> group.app2UninstallProtectionEnabled != false
+            else -> false
         }
     }
 
@@ -985,6 +1018,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         Log.d(TAG, "Service unbound")
         isServiceRunning = false
+        AccessibilityStatusNotifier.sync(this)
         return super.onUnbind(intent)
     }
     
@@ -993,6 +1027,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
             super.onDestroy()
             isServiceRunning = false
             Log.d(TAG, "Accessibility service destroyed")
+            AccessibilityStatusNotifier.sync(this)
             
             try {
                 unregisterReceiver(screenStateReceiver)

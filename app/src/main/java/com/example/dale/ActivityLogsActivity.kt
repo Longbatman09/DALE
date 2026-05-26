@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -64,9 +65,10 @@ fun ActivityLogsScreen(
     val app2Name = appGroup?.app2Name?.ifBlank { "App 2" } ?: "App 2"
     val app1Package = appGroup?.app1PackageName?.takeIf { it.isNotBlank() }
     val app2Package = appGroup?.app2PackageName?.takeIf { it.isNotBlank() }
-    val logs: List<ActivityLogEntry> = remember(groupId) {
-        sharedPrefs.getActivityLogs(groupId)
-    }
+
+    var logs by remember(groupId) { mutableStateOf(sharedPrefs.getActivityLogs(groupId)) } // Change to var to allow updating
+    var showClearLogsConfirmation by remember { mutableStateOf(false) }
+
     val tabTitles = listOf("ALL", app1Name, app2Name)
     var selectedTab by remember { mutableStateOf(0) }
     val filteredLogs = remember(
@@ -96,6 +98,31 @@ fun ActivityLogsScreen(
         }
     }
 
+    // Confirmation dialog for clearing logs
+    if (showClearLogsConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showClearLogsConfirmation = false },
+            title = { Text(text = "Clear Activity Logs?", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to clear all activity logs for this group? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        sharedPrefs.clearActivityLogs(groupId) // Call the new function
+                        logs = emptyList() // Update the local state to refresh UI
+                        showClearLogsConfirmation = false
+                    }
+                ) {
+                    Text("Clear", color = Color(0xFFFF5252))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearLogsConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -117,7 +144,8 @@ fun ActivityLogsScreen(
                     .height(56.dp)
                     .background(Color(0xFF0f3460))
                     .padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween // Ensure space between elements
             ) {
                 IconButton(onClick = { activity.finish() }) {
                     Icon(
@@ -126,7 +154,10 @@ fun ActivityLogsScreen(
                         tint = Color.White
                     )
                 }
-                Column(modifier = Modifier.padding(start = 8.dp)) {
+                Column(
+                    modifier = Modifier.weight(1f) // Give Column weight to push clear button to end
+                        .padding(start = 8.dp)
+                ) {
                     Text(
                         text = "Activity Logs",
                         fontSize = 18.sp,
@@ -137,6 +168,13 @@ fun ActivityLogsScreen(
                         text = groupName,
                         fontSize = 12.sp,
                         color = Color.LightGray
+                    )
+                }
+                TextButton(onClick = { showClearLogsConfirmation = true }) {
+                    Text(
+                        text = "Clear Logs",
+                        color = Color.White,
+                        fontSize = 14.sp // Adjust font size as needed
                     )
                 }
             }

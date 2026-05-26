@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Bundle
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import com.example.dale.utils.AccessibilityStatusNotifier
 import com.example.dale.utils.AppActivityLogger
 
 class DALEApplication : Application() {
@@ -14,6 +15,7 @@ class DALEApplication : Application() {
 
         // Initialize activity logger
         AppActivityLogger.initialize(this)
+        AccessibilityStatusNotifier.sync(this)
 
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
@@ -24,6 +26,7 @@ class DALEApplication : Application() {
 
             override fun onActivityResumed(activity: Activity) {
                 applySystemBars(activity)
+                AccessibilityStatusNotifier.sync(activity)
             }
 
             override fun onActivityPaused(activity: Activity) = Unit
