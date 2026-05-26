@@ -15,14 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.foundation.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -38,8 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.dale.ui.theme.DALETheme
 import com.example.dale.ui.theme.Purple40
-import com.example.dale.ui.theme.Purple80
-import com.example.dale.utils.SharedPreferencesManager
 
 class WelcomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,23 +104,14 @@ fun WelcomeScreen(modifier: Modifier = Modifier, onStartSetup: () -> Unit = {}) 
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    // Lock Icon
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "App Lock Icon",
-                        tint = Purple80,
-                        modifier = Modifier
-                            .height(64.dp)
-                            .padding(bottom = 16.dp)
-                    )
-
                     // App Title
-                    Text(
-                        text = "DALE",
-                        fontSize = 56.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Purple80,
-                        modifier = Modifier.padding(bottom = 24.dp)
+                    Image(
+                        painter = painterResource(id = R.drawable.dale_logo_intro),
+                        contentDescription = "DALE Logo",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .padding(bottom = 0.dp)
                     )
 
                     // App Description
@@ -169,7 +156,8 @@ fun WelcomeScreen(modifier: Modifier = Modifier, onStartSetup: () -> Unit = {}) 
                 Text(
                     text = "Start Setup",
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
                 )
             }
 

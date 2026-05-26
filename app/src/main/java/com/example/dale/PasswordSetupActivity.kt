@@ -129,14 +129,15 @@ class PasswordSetupActivity : ComponentActivity() {
             val app2HashedCredential = hashPin(app2RawCredential)
             val app1NormalizedType = app1AuthType.uppercase()
             val app2NormalizedType = app2AuthType.uppercase()
+            val groupPinLength = if (app1NormalizedType == "PIN") app1RawCredential.length else 0
             
             val newGroup = appGroup.copy(
                 app1LockPin = app1HashedCredential,
                 app1LockType = app1NormalizedType,
-                app1PinLength = if (app1NormalizedType == "PIN") app1RawCredential.length else 0,
+                app1PinLength = groupPinLength,
                 app2LockPin = app2HashedCredential,
                 app2LockType = app2NormalizedType,
-                app2PinLength = if (app2NormalizedType == "PIN") app2RawCredential.length else 0,
+                app2PinLength = if (app2NormalizedType == "PIN") groupPinLength else 0,
                 isLocked = true
             )
             sharedPrefsManager.saveAppGroupForSetup(newGroup)
@@ -169,6 +170,14 @@ class PasswordSetupActivity : ComponentActivity() {
             // With new policy: Always use backup credentials (never biometric-only)
             val app1BackupFinal = if (app1BackupPin.isNotEmpty()) hashPin(app1BackupPin) else appGroup.app1LockPin
             val app2BackupFinal = if (app2BackupPin.isNotEmpty()) hashPin(app2BackupPin) else appGroup.app2LockPin
+            val groupPinLength = if (resolvedBackupType == "PIN") {
+                app1BackupPin.length.takeIf { it > 0 }
+                    ?: appGroup.app1PinLength.takeIf { it > 0 }
+                    ?: app2BackupPin.length.takeIf { it > 0 }
+                    ?: appGroup.app2PinLength
+            } else {
+                0
+            }
 
             // Always set lock type to the backup type (never just "BIOMETRIC")
             val app1TypeFinal = resolvedBackupType
@@ -183,6 +192,8 @@ class PasswordSetupActivity : ComponentActivity() {
                 app2LockType = app2TypeFinal,
                 app1LockPin = app1BackupFinal,
                 app2LockPin = app2BackupFinal,
+                app1PinLength = if (app1TypeFinal == "PIN") groupPinLength else 0,
+                app2PinLength = if (app2TypeFinal == "PIN") groupPinLength else 0,
                 isLocked = true
             )
             sharedPrefsManager.saveAppGroupForSetup(newGroup)
@@ -404,7 +415,7 @@ fun PasswordSetupScreen(
                                 // Store credential temporarily
                                 if (targetAppIndex.value == 1) {
                                     app1Credential.value = credential
-                                    app1PinLength.value = credential.length  // Store PIN length for App1
+                                    app1PinLength.value = if (authType.uppercase() == "PIN") credential.length else 0
                                     app1AuthType.value = authType
                                     app1BackupType.value = authType
                                     app2BackupType.value = authType
@@ -711,6 +722,7 @@ fun CredentialEntryScreen(
 
     val firstInput = remember { mutableStateOf("") }
     val confirmInput = remember { mutableStateOf("") }
+    val confirmationPinLength = remember { mutableStateOf(0) }
     val step = remember { mutableStateOf(0) }
     val errorMessage = remember { mutableStateOf("") }
 
@@ -739,14 +751,14 @@ fun CredentialEntryScreen(
     val currentState = if (step.value == 0) firstInput else confirmInput
     val currentValue = currentState.value
     val isButtonEnabled = currentValue.length >= minLength
-    val pinEntryMaxLength = when {
-        isPinMode && appIndex == 1 && step.value == 1 && firstInput.value.isNotEmpty() -> firstInput.value.length
+    fun currentPinEntryMaxLength(): Int = when {
+        isPinMode && step.value == 1 && confirmationPinLength.value > 0 -> confirmationPinLength.value
         else -> maxLength
     }
 
     fun advanceWithValue(inputValue: String) {
         val stepMaxLength = when {
-            isPinMode && appIndex == 1 && step.value == 1 && firstInput.value.isNotEmpty() -> firstInput.value.length
+            isPinMode && step.value == 1 && confirmationPinLength.value > 0 -> confirmationPinLength.value
             else -> maxLength
         }
         if (appIndex == 1 && isPinMode) {
@@ -781,8 +793,10 @@ fun CredentialEntryScreen(
                     }
                     firstInput.value = ""
                     confirmInput.value = ""
+                    confirmationPinLength.value = 0
                 } else {
                     firstInput.value = inputValue.take(stepMaxLength)
+                    confirmationPinLength.value = firstInput.value.length
                     confirmInput.value = ""
                     step.value = 1
                     errorMessage.value = ""
@@ -791,7 +805,9 @@ fun CredentialEntryScreen(
 
             1 -> {
                 confirmInput.value = inputValue.take(stepMaxLength)
-                if (firstInput.value == confirmInput.value) {
+                if (isPinMode && confirmationPinLength.value > 0 && confirmInput.value.length != confirmationPinLength.value) {
+                    errorMessage.value = "PIN must be ${confirmationPinLength.value} digits"
+                } else if (firstInput.value == confirmInput.value) {
                     onCredentialConfirmed(firstInput.value)
                 } else {
                     errorMessage.value = if (isPatternMode) {
@@ -804,6 +820,7 @@ fun CredentialEntryScreen(
                     step.value = 0
                     firstInput.value = ""
                     confirmInput.value = ""
+                    confirmationPinLength.value = 0
                 }
             }
         }
@@ -874,7 +891,7 @@ fun CredentialEntryScreen(
                 appIndex = appIndex,
                 app1PinLength = app1PinLength,
                 step = step.value,
-                firstInputLength = firstInput.value.length,
+                firstInputLength = confirmationPinLength.value,
                 dotsAlpha = pinDotsAlpha,
                 modifier = Modifier
                     .padding(top = 24.dp, bottom = 12.dp)
@@ -971,24 +988,27 @@ fun CredentialEntryScreen(
         if (isPinMode) {
             VirtualNumberKeypad(
                 onNumberClick = { number ->
-                    if (!isClearingPin && currentState.value.length < pinEntryMaxLength) {
-                        currentState.value += number
+                    val targetState = if (step.value == 0) firstInput else confirmInput
+                    if (!isClearingPin && targetState.value.length < currentPinEntryMaxLength()) {
+                        targetState.value += number
                         errorMessage.value = ""
                     }
                 },
                 onBackspace = {
-                    if (!isClearingPin && currentState.value.isNotEmpty()) {
-                        currentState.value = currentState.value.dropLast(1)
+                    val targetState = if (step.value == 0) firstInput else confirmInput
+                    if (!isClearingPin && targetState.value.isNotEmpty()) {
+                        targetState.value = targetState.value.dropLast(1)
                         errorMessage.value = ""
                     }
                 },
                 onBackspaceLongPress = {
-                    if (!isClearingPin && currentState.value.isNotEmpty()) {
+                    val targetState = if (step.value == 0) firstInput else confirmInput
+                    if (!isClearingPin && targetState.value.isNotEmpty()) {
                         isClearingPin = true
                         pinDotsAlphaTarget = 0f
                         scope.launch {
                             delay(140)
-                            currentState.value = ""
+                            targetState.value = ""
                             errorMessage.value = ""
                             pinDotsAlphaTarget = 1f
                             delay(120)
@@ -1095,11 +1115,13 @@ fun VirtualNumberKeypad(
                     }),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = "→",
-                    fontSize = confirmArrowFontSize,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isConfirmEnabled) Color.White else Color.White.copy(alpha = 0.7f)
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = R.drawable.back_arrow),
+                    contentDescription = "Continue",
+                    modifier = Modifier.size(36.dp),
+                    colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                        if (isConfirmEnabled) Color.White else Color.White.copy(alpha = 0.7f)
+                    )
                 )
             }
         }

@@ -3,16 +3,12 @@ package com.example.dale
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.InputMethodManager
-import androidx.core.app.NotificationCompat
 import androidx.core.content.getSystemService
 import com.example.dale.ActivityLogEntry
 import com.example.dale.utils.SharedPreferencesManager
@@ -43,15 +39,9 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
     private var keyboardPackages: List<String> = emptyList()
     private var pendingUninstallChallenge: UninstallChallenge? = null
     private var uninstallApprovalUntilMs: Long = 0L
-    private var lastUninstallLockAttemptMs: Long = 0L
-    private var uninstallGraceNotificationRunnable: Runnable? = null
-    private var scheduledUninstallPackage: String? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     companion object {
-        private const val UNINSTALL_GRACE_CHANNEL_ID = "dale_uninstall_grace"
-        private const val UNINSTALL_GRACE_NOTIFICATION_ID = 4103
-
         @Volatile
         var isServiceRunning = false
             private set
@@ -76,7 +66,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                      context?.let {
                          val sharedPrefs = SharedPreferencesManager.getInstance(it)
                          sharedPrefs.clearLastOpenedApp()
-                         Log.d("AppDetection", "🔒 Cleared last opened app on screen off")
+                         Log.d("AppDetection", " Cleared last opened app on screen off")
                      }
                  }
              } catch (e: Exception) {
@@ -131,7 +121,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
 
              Log.d(TAG, "Accessibility service created")
              Log.d("AppDetection", "✅ ACCESSIBILITY_SERVICE_CREATED - Ready to monitor app events")
-             Log.d("AppDetection", "🎯 Watching for app opens/closes...")
+             Log.d("AppDetection", " Watching for app opens/closes...")
              autoOpenTrackedAppAfterServiceCreated()
          } catch (e: Exception) {
              Log.e(TAG, "Error in onCreate", e)
@@ -152,7 +142,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                     addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 }
                 startActivity(daleIntent)
-                Log.d("AppDetection", "🚀 AUTO_OPEN_TRIGGERED_AFTER_SERVICE_CREATED: DALE_HOME")
+                Log.d("AppDetection", " AUTO_OPEN_TRIGGERED_AFTER_SERVICE_CREATED: DALE_HOME")
                 return
             }
 
@@ -164,7 +154,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                     addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 }
                 startActivity(daleIntent)
-                Log.d("AppDetection", "🚀 AUTO_OPEN_TRIGGERED_AFTER_SERVICE_CREATED: DALE_HOME")
+                Log.d("AppDetection", " AUTO_OPEN_TRIGGERED_AFTER_SERVICE_CREATED: DALE_HOME")
                 return
             }
 
@@ -177,7 +167,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             startActivity(launchIntent)
-            Log.d("AppDetection", "🚀 AUTO_OPEN_TRIGGERED_AFTER_SERVICE_CREATED: $packageToOpen")
+            Log.d("AppDetection", " AUTO_OPEN_TRIGGERED_AFTER_SERVICE_CREATED: $packageToOpen")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to auto-open app after service creation", e)
             Log.e("AppDetection", "❌ AUTO_OPEN_ERROR_AFTER_SERVICE_CREATED: ${e.message}")
@@ -226,7 +216,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
              AccessibilityEvent.TYPE_WINDOWS_CHANGED -> "WINDOWS_CHANGED"
              else -> "OTHER (${event.eventType})"
          }
-         Log.v("AppDetection", "📡 Event received - Package: $packageName, Type: $eventType")
+         Log.v("AppDetection", " Event received - Package: $packageName, Type: $eventType")
 
           if (handleUninstallDialogEvent(event, packageName)) {
               return
@@ -245,7 +235,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
          if (isRecentsEvent(event)) {
              if (!recentsOpen) {
                  Log.d(TAG, "Entering recents")
-                 Log.d("AppDetection", "📋 RECENTS_OPENED - User viewing recent apps")
+                 Log.d("AppDetection", " RECENTS_OPENED - User viewing recent apps")
              }
              recentsOpen = true
              return
@@ -278,7 +268,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
           when {
               isSamsungHomeScreen -> {
                   Log.d(TAG, "Home launcher detected: ${event.packageName}")
-                  Log.d("AppDetection", "🏠 HOME_LAUNCHER_OPENED (${event.packageName})")
+                  Log.d("AppDetection", " HOME_LAUNCHER_OPENED (${event.packageName})")
 
                   // ✅ STEP 2 & 3: Use last opened app from storage instead of local variable
                   val sharedPrefs = SharedPreferencesManager.getInstance(applicationContext)
@@ -288,7 +278,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                   val lastOpenedAppName = sharedPrefs.getLastOpenedAppName()
 
                   if (!lastOpenedPackage.isNullOrEmpty() && !lastOpenedGroupId.isNullOrEmpty()) {
-                      Log.d("AppDetection", "📤 Logging app closed: $lastOpenedPackage (group: $lastOpenedGroupName)")
+                      Log.d("AppDetection", " Logging app closed: $lastOpenedPackage (group: $lastOpenedGroupName)")
 
                       // ✅ STEP 3: Check if last log is OPENED before logging CLOSED
                       logAppClosedIfProtected(
@@ -311,13 +301,13 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
 
              isRecentlyOpened -> {
                  Log.d(TAG, "Entering recents")
-                 Log.d("AppDetection", "📋 RECENTS_OPENED - User viewing recent apps")
+                 Log.d("AppDetection", " RECENTS_OPENED - User viewing recent apps")
                  recentsOpen = true
              }
 
               isHomeScreen -> {
                   Log.d(TAG, "On home screen")
-                  Log.d("AppDetection", "🏠 HOME_SCREEN_OPENED - User on home screen")
+                  Log.d("AppDetection", " HOME_SCREEN_OPENED - User on home screen")
                   recentsOpen = false
                   clearTemporarilyUnlockedAppIfNeeded()
 
@@ -344,7 +334,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
 
              isAppSwitchedFromRecents(event) -> {
                  Log.d(TAG, "App switched from recents")
-                 Log.d("AppDetection", "🔄 APP_SWITCHED_FROM_RECENTS - App: ${event.packageName}")
+                 Log.d("AppDetection", " APP_SWITCHED_FROM_RECENTS - App: ${event.packageName}")
                  recentsOpen = false
                  clearTemporarilyUnlockedAppIfNeeded(event.packageName?.toString())
              }
@@ -431,11 +421,10 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
             groupId = groupId ?: "",
             appName = appName
         )
-        uninstallApprovalUntilMs = System.currentTimeMillis() + 60_000L
+        uninstallApprovalUntilMs = System.currentTimeMillis() + 15_000L
         DALEAppLockManager.isLockScreenShown.set(false)
 
         Log.d(TAG, "Uninstall credentials accepted for $appName ($packageName); approval window active")
-        scheduleUninstallGraceNotification(appName, packageName)
         // Defer attempting to resume the uninstall dialog to avoid interfering with lock screen display
         mainHandler.postDelayed({
             try {
@@ -449,70 +438,6 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
     private fun clearUninstallChallenge() {
         pendingUninstallChallenge = null
         uninstallApprovalUntilMs = 0L
-        lastUninstallLockAttemptMs = 0L
-        scheduledUninstallPackage = null
-        uninstallGraceNotificationRunnable?.let { mainHandler.removeCallbacks(it) }
-        uninstallGraceNotificationRunnable = null
-    }
-
-    private fun scheduleUninstallGraceNotification(appName: String, packageName: String) {
-        uninstallGraceNotificationRunnable?.let { mainHandler.removeCallbacks(it) }
-        scheduledUninstallPackage = packageName
-
-        val delayMs = uninstallApprovalUntilMs - System.currentTimeMillis() - 10_000L
-        val runnable = Runnable {
-            val now = System.currentTimeMillis()
-            val pending = pendingUninstallChallenge
-            if (pending == null || scheduledUninstallPackage != packageName) return@Runnable
-            if (now > uninstallApprovalUntilMs || uninstallApprovalUntilMs <= 0L) return@Runnable
-            showUninstallGraceEndingNotification(appName, packageName)
-        }
-
-        uninstallGraceNotificationRunnable = runnable
-        if (delayMs > 0L) {
-            mainHandler.postDelayed(runnable, delayMs)
-        } else {
-            mainHandler.post(runnable)
-        }
-    }
-
-    private fun showUninstallGraceEndingNotification(appName: String, packageName: String) {
-        if (!isPackageInstalled(packageName)) {
-            Log.d(TAG, "Skipping uninstall grace notification; $packageName already uninstalled")
-            return
-        }
-        ensureUninstallGraceNotificationChannel()
-        val notificationManager = getSystemService(NotificationManager::class.java) ?: return
-        val notification = NotificationCompat.Builder(this, UNINSTALL_GRACE_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Uninstall grace ending")
-            .setContentText("Finish uninstalling $appName within 10 seconds.")
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
-        notificationManager.notify(UNINSTALL_GRACE_NOTIFICATION_ID, notification)
-    }
-
-    private fun isPackageInstalled(packageName: String): Boolean {
-        return try {
-            packageManager.getPackageInfo(packageName, 0)
-            true
-        } catch (_: PackageManager.NameNotFoundException) {
-            false
-        }
-    }
-
-    private fun ensureUninstallGraceNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val notificationManager = getSystemService(NotificationManager::class.java) ?: return
-        val channel = NotificationChannel(
-            UNINSTALL_GRACE_CHANNEL_ID,
-            "Uninstall grace alerts",
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = "Alerts when uninstall grace is about to end"
-        }
-        notificationManager.createNotificationChannel(channel)
     }
 
     private fun handleUninstallDialogEvent(event: AccessibilityEvent, packageName: String): Boolean {
@@ -534,10 +459,6 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
             ?: return false
 
         val targetChallenge = resolveUninstallTarget(windowText, targetGroup) ?: return false
-        if (!isUninstallProtectionEnabled(targetGroup, targetChallenge.packageName)) {
-            Log.d(TAG, "Uninstall protection disabled for ${targetChallenge.packageName}")
-            return true
-        }
         val now = System.currentTimeMillis()
         val approvalActive = pendingUninstallChallenge?.packageName == targetChallenge.packageName &&
                 now <= uninstallApprovalUntilMs
@@ -548,15 +469,11 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
         }
 
         if (DALEAppLockManager.isLockScreenShown.get()) {
-            val recentlyAttempted = now - lastUninstallLockAttemptMs < 1200L
-            if (recentlyAttempted) {
-                return true
-            }
+            return true
         }
 
         pendingUninstallChallenge = targetChallenge
         Log.d(TAG, "Uninstall dialog detected for ${targetChallenge.appName} (${targetChallenge.packageName})")
-        lastUninstallLockAttemptMs = now
         showLockScreen(targetChallenge.packageName, targetChallenge.groupId, isUninstallFlow = true)
         return true
     }
@@ -584,14 +501,6 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                 UninstallChallenge(group.app2PackageName, group.id, app2Name)
             }
             else -> null
-        }
-    }
-
-    private fun isUninstallProtectionEnabled(group: AppGroup, packageName: String): Boolean {
-        return when (packageName) {
-            group.app1PackageName -> group.app1UninstallProtectionEnabled != false
-            group.app2PackageName -> group.app2UninstallProtectionEnabled != false
-            else -> true
         }
     }
 
@@ -804,7 +713,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
              val appGroups = sharedPrefs.getAllAppGroups()
              for (group in appGroups) {
                  if (packageName == group.app1PackageName) {
-                     val message = "📱 APP_OPENED: ${group.app1Name} ($packageName) from group '${group.groupName}' [Accessibility Service]"
+                     val message = " APP_OPENED: ${group.app1Name} ($packageName) from group '${group.groupName}' [Accessibility Service]"
                      Log.d("AppDetection", message)
                      AppActivityLogger.logAppOpened(
                          packageName,
@@ -815,7 +724,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                      return
                  }
                  if (packageName == group.app2PackageName) {
-                     val message = "📱 APP_OPENED: ${group.app2Name} ($packageName) from group '${group.groupName}' [Accessibility Service]"
+                     val message = " APP_OPENED: ${group.app2Name} ($packageName) from group '${group.groupName}' [Accessibility Service]"
                      Log.d("AppDetection", message)
                      AppActivityLogger.logAppOpened(
                          packageName,
@@ -839,7 +748,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
           sharedPrefs: SharedPreferencesManager
       ) {
           try {
-              Log.d("AppDetection", "🔍 Checking if $packageName should be logged as closed...")
+              Log.d("AppDetection", " Checking if $packageName should be logged as closed...")
 
               // ✅ STEP 3: Check if last log entry for this package is "OPENED"
               // If it's already "CLOSED", skip logging to prevent duplicates
@@ -899,7 +808,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
 
                       // ✅ NEW ALGORITHM: Check last log entry for this package FIRST
                       // Do this BEFORE checking isLockScreenShown, because state should be based on actual logs
-                      Log.d("AppDetection", "🔍 Checking last log entry for $packageName...")
+                      Log.d("AppDetection", " Checking last log entry for $packageName...")
                       val lastEvent = sharedPrefs.getLatestActivityEventForPackage(group.id, packageName)
 
                       when {
@@ -910,7 +819,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                           }
                           lastEvent?.uppercase(Locale.ROOT) == "CLOSED" -> {
                               // ✅ Last log is CLOSED - App was closed, need lock screen
-                              Log.d("AppDetection", "🔒 LAST LOG IS CLOSED: $appName ($packageName) - Triggering lock screen")
+                              Log.d("AppDetection", " LAST LOG IS CLOSED: $appName ($packageName) - Triggering lock screen")
 
                                 // ✅ Reset lock screen state if needed (app was closed, so it's a new session)
                                 if (DALEAppLockManager.isLockScreenShown.get()) {
@@ -1014,7 +923,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
       private fun showLockScreen(packageName: String, groupId: String, isUninstallFlow: Boolean = false) {
           try {
               DALEAppLockManager.isLockScreenShown.set(true)
-              Log.d(TAG, "Showing lock screen for: $packageName (uninstall: $isUninstallFlow)")
+              Log.d(TAG, "Showing lock screen for: $packageName")
 
               // Log the lock screen trigger
               val sharedPrefs = SharedPreferencesManager.getInstance(applicationContext)
@@ -1022,13 +931,13 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
               if (group != null) {
                   val appName = if (packageName == group.app1PackageName) group.app1Name else group.app2Name
 
-                  Log.d("AppDetection", "🔐 LOCK_SCREEN_TRIGGERED ========================================")
+                  Log.d("AppDetection", " LOCK_SCREEN_TRIGGERED ========================================")
                   Log.d("AppDetection", "   App: $appName")
                   Log.d("AppDetection", "   Package: $packageName")
                   Log.d("AppDetection", "   Group: ${group.groupName}")
                   Log.d("AppDetection", "   Method: Accessibility Service")
                   Log.d("AppDetection", "   Status: User must enter credentials to unlock")
-                  Log.d("AppDetection", "🔐 ========================================")
+                  Log.d("AppDetection", " ========================================")
 
                   AppActivityLogger.logLockScreenTriggered(
                       packageName,
@@ -1097,7 +1006,6 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "Uninstall receiver not registered")
             }
 
-            uninstallGraceNotificationRunnable?.let { mainHandler.removeCallbacks(it) }
             DALEAppLockManager.isLockScreenShown.set(false)
             clearUninstallChallenge()
         } catch (e: Exception) {

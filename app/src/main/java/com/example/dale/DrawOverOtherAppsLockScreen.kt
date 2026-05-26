@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -35,6 +36,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -893,20 +895,6 @@ fun LockScreenContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Spacer(modifier = Modifier.size(76.dp).padding(6.dp))
-
-                        NumberButton(
-                            number = "0",
-                            onClick = {
-                                if (!isClearingPin && credentialInput.length < expectedPinLength && !isVerifying) {
-                                    credentialInput += "0"
-                                    errorMessage = null
-                                }
-                            },
-                            enabled = !isVerifying,
-                            hapticIntensity = hapticIntensity
-                        )
-
                         NumberButton(
                             number = "⌫",
                             onClick = {
@@ -932,6 +920,44 @@ fun LockScreenContent(
                             enabled = !isVerifying,
                             hapticIntensity = hapticIntensity
                         )
+
+                        NumberButton(
+                            number = "0",
+                            onClick = {
+                                if (!isClearingPin && credentialInput.length < expectedPinLength && !isVerifying) {
+                                    credentialInput += "0"
+                                    errorMessage = null
+                                }
+                            },
+                            enabled = !isVerifying,
+                            hapticIntensity = hapticIntensity
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .padding(6.dp)
+                                .shadow(
+                                    elevation = if (!isVerifying) 3.dp else 0.dp,
+                                    shape = CircleShape
+                                )
+                                .clip(CircleShape)
+                                .background(if (!isVerifying) Color(0xFF0F315C) else Color(0xFF0A213F))
+                                .clickable(enabled = !isVerifying, onClick = {
+                                    performKeypadHaptic(context, intensityPercent = hapticIntensity)
+                                    scope.launch { verifyAndUnlock(credentialInput) }
+                                }),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(id = R.drawable.back_arrow),
+                                contentDescription = "Continue",
+                                modifier = Modifier.size(36.dp),
+                                colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(
+                                    if (!isVerifying) Color.White else Color.White.copy(alpha = 0.7f)
+                                )
+                            )
+                        }
                     }
                 }
             } else {

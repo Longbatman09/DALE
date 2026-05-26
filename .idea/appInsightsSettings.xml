@@ -8,10 +8,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.example.dale" />
+                  <option name="mobileSdkAppId" value="1:202940676997:android:3d0da3d215d237ca19a2ec" />
+                  <option name="projectId" value="dualapplockexecutor" />
+                  <option name="projectNumber" value="202940676997" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

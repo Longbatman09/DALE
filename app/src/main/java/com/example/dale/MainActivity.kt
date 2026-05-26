@@ -1,17 +1,14 @@
 package com.example.dale
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Bundle
-import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
@@ -37,6 +34,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -50,6 +50,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -68,10 +69,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.dale.ui.theme.DALETheme
@@ -79,13 +81,12 @@ import com.example.dale.ui.theme.Purple40
 import com.example.dale.ui.theme.Purple80
 import com.example.dale.utils.MonitorStartupHelper
 import com.example.dale.utils.SharedPreferencesManager
+import com.google.firebase.database.FirebaseDatabase
+import com.google.firebase.database.ServerValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import android.widget.Toast
-import com.google.firebase.database.FirebaseDatabase
+
+private const val FIREBASE_DATABASE_URL = "https://dualapplockexecutor-default-rtdb.firebaseio.com/"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -129,14 +130,8 @@ class MainActivity : ComponentActivity() {
 fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var hasAccessibility by remember { mutableStateOf(MonitorStartupHelper.isAccessibilityServiceEnabled(context)) }
-    var hasNotifications by remember { mutableStateOf(areNotificationsGranted(context)) }
     var hasBattery by remember { mutableStateOf(MonitorStartupHelper.isIgnoringBatteryOptimizations(context)) }
     var refreshKey by remember { mutableIntStateOf(0) }
-    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasNotifications = granted || Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-    }
 
     // Re-check all permissions each time refreshKey changes (triggered on every resume)
     DisposableEffect(Unit) {
@@ -151,7 +146,6 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
 
     LaunchedEffect(refreshKey) {
         hasAccessibility = MonitorStartupHelper.isAccessibilityServiceEnabled(context)
-        hasNotifications = areNotificationsGranted(context)
         hasBattery = MonitorStartupHelper.isIgnoringBatteryOptimizations(context)
     }
 
@@ -164,16 +158,6 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
             buttonText = "Open Accessibility Settings",
             onAction = {
                 MonitorStartupHelper.openAccessibilitySettings(context)
-            }
-        )
-        !hasNotifications -> PermissionWallScreen(
-            modifier = modifier,
-            iconRes = R.drawable.noti,
-            title = "Enable Notifications",
-            description = "DALE uses notifications to warn you when uninstall protection is about to expire.\n\nTap below to allow notifications.",
-            buttonText = "Allow Notifications",
-            onAction = {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         )
         !hasBattery -> PermissionWallScreen(
@@ -196,17 +180,6 @@ fun MainGate(modifier: Modifier = Modifier, activity: ComponentActivity) {
             }
         )
         else -> HomeScreen(modifier = modifier, activity = activity)
-    }
-}
-
-private fun areNotificationsGranted(context: Context): Boolean {
-    return if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-        true
-    } else {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS
-        ) == PackageManager.PERMISSION_GRANTED
     }
 }
 
@@ -313,7 +286,7 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
     var showDestroyConfirmation by remember { mutableStateOf(false) }
     var showDestroyingScreen by remember { mutableStateOf(false) }
     var showAbout by remember { mutableStateOf(false) }
-    var showFeedback by remember { mutableStateOf(false) }
+    var showFeedbackDialog by remember { mutableStateOf(false) }
     var protectionActive by remember { mutableStateOf(false) }
     var protectionEnabled by remember { mutableStateOf(sharedPrefs.isProtectionEnabled()) }
     var showProtectionDisableConfirmation by remember { mutableStateOf(false) }
@@ -414,6 +387,13 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
         )
     }
 
+    if (showFeedbackDialog) {
+        FeedbackDialog(
+            onDismiss = { showFeedbackDialog = false },
+            onSubmitted = { showFeedbackDialog = false }
+        )
+    }
+
     // Destroying Loading Screen
     if (showDestroyingScreen) {
         DestroyingLoadingScreen(
@@ -436,12 +416,6 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
         AboutScreen(
             modifier = modifier,
             onClose = { showAbout = false },
-            activity = hostActivity
-        )
-    } else if (showFeedback) {
-        FeedbackScreen(
-            modifier = modifier,
-            onClose = { showFeedback = false },
             activity = hostActivity
         )
     } else {
@@ -618,7 +592,7 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
                      } else if (menuItem == "About") {
                          showAbout = true
                      } else if (menuItem == "Feedback") {
-                         showFeedback = true
+                         showFeedbackDialog = true
                      }
                      isMenuOpen = false
                  }
@@ -777,7 +751,17 @@ fun SideMenu(
 
             Spacer(modifier = Modifier.weight(1f))
 
-            // Feedback Button
+
+            // About Button
+            MenuItem(
+                text = "About",
+                iconRes = R.drawable.info,
+                iconSize = 28.dp,
+                onClick = { onMenuItemClick("About") }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             MenuItem(
                 text = "Feedback",
                 iconRes = R.drawable.feedback,
@@ -787,12 +771,12 @@ fun SideMenu(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // About Button
+            // Destroy DALE Button at bottom
             MenuItem(
-                text = "About",
-                iconRes = R.drawable.info,
-                iconSize = 28.dp,
-                onClick = { onMenuItemClick("About") }
+                text = "Destroy DALE",
+                iconRes = R.drawable.bin2,
+                onClick = { onMenuItemClick("Destroy") },
+                isDestructive = true
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -899,6 +883,167 @@ fun DestroyingLoadingScreen(
             trackColor = Color(0xFF0A2940)
         )
     }
+}
+
+@Composable
+fun FeedbackDialog(
+    onDismiss: () -> Unit,
+    onSubmitted: () -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var name by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val trimmedName = name.trim()
+    val trimmedEmail = email.trim()
+    val trimmedTitle = title.trim()
+    val trimmedDescription = description.trim()
+    val isEmailValid = trimmedEmail.contains("@") && trimmedEmail.contains(".")
+    val canSubmit = trimmedName.isNotEmpty() &&
+        isEmailValid &&
+        trimmedTitle.isNotEmpty() &&
+        trimmedDescription.isNotEmpty() &&
+        !isSubmitting
+
+    AlertDialog(
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
+        containerColor = Color(0xFF03193B),
+        title = {
+            Text(
+                text = "Feedback",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it.take(80)
+                        errorMessage = null
+                    },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    enabled = !isSubmitting,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = {
+                        email = it.take(120)
+                        errorMessage = null
+                    },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    enabled = !isSubmitting,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Email,
+                        imeAction = ImeAction.Next
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = {
+                        title = it.take(120)
+                        errorMessage = null
+                    },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    enabled = !isSubmitting,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = {
+                        description = it.take(2000)
+                        errorMessage = null
+                    },
+                    label = { Text("Description") },
+                    minLines = 4,
+                    maxLines = 6,
+                    enabled = !isSubmitting,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Default
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage ?: "",
+                        color = Color(0xFFFF6B6B),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = canSubmit,
+                onClick = {
+                    if (!canSubmit) {
+                        errorMessage = if (!isEmailValid) "Enter a valid email address" else "Fill all fields"
+                        return@Button
+                    }
+
+                    isSubmitting = true
+                    errorMessage = null
+
+                    val feedback = mapOf(
+                        "name" to trimmedName,
+                        "email" to trimmedEmail,
+                        "title" to trimmedTitle,
+                        "description" to trimmedDescription,
+                        "createdAt" to ServerValue.TIMESTAMP,
+                        "source" to "android"
+                    )
+
+                    FirebaseDatabase
+                        .getInstance(FIREBASE_DATABASE_URL)
+                        .reference
+                        .child("feedback")
+                        .push()
+                        .setValue(feedback)
+                        .addOnSuccessListener {
+                            isSubmitting = false
+                            Toast.makeText(context, "Feedback sent", Toast.LENGTH_SHORT).show()
+                            onSubmitted()
+                        }
+                        .addOnFailureListener { exception ->
+                            isSubmitting = false
+                            errorMessage = exception.localizedMessage ?: "Unable to send feedback"
+                        }
+                }
+            ) {
+                Text(if (isSubmitting) "Sending..." else "Send")
+            }
+        },
+        dismissButton = {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -1060,395 +1205,123 @@ fun AboutScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                 }
 
-                // Action Images
+                // Action Buttons
                 item {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth(0.85f),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable {
+                        // GitHub Button
+                        Button(
+                            onClick = {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = "https://github.com".toUri()
                                 }
                                 activity.startActivity(intent)
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0F2A54)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.github),
-                                contentDescription = "GitHub",
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Text(
-                                text = "GitHub",
-                                fontSize = 10.sp,
-                                color = Color(0xFFB0B0B0)
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "",
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "GitHub",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF5DADE2),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable {
+                        // Donate Button
+                        Button(
+                            onClick = {
                                 val intent = Intent(Intent.ACTION_VIEW).apply {
                                     data = "https://buymeacoffee.com".toUri()
                                 }
                                 activity.startActivity(intent)
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0F2A54)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.donate),
-                                contentDescription = "Donate",
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Text(
-                                text = "Donate",
-                                fontSize = 10.sp,
-                                color = Color(0xFFB0B0B0)
-                            )
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "❤️",
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    text = "Donate",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF5DADE2),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
 
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clickable {
+                        // Feedback Button
+                        Button(
+                            onClick = {
                                 val intent = Intent(Intent.ACTION_SEND).apply {
                                     type = "message/rfc822"
                                     putExtra(Intent.EXTRA_EMAIL, arrayOf("feedback@dale.app"))
                                     putExtra(Intent.EXTRA_SUBJECT, "DALE Feedback")
                                 }
                                 activity.startActivity(Intent.createChooser(intent, "Send Feedback"))
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF0F2A54)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3D6EA4))
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.feedback),
-                                contentDescription = "Feedback",
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Text(
-                                text = "Feedback",
-                                fontSize = 10.sp,
-                                color = Color(0xFFB0B0B0)
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun FeedbackScreen(
-    modifier: Modifier = Modifier,
-    onClose: () -> Unit,
-    activity: ComponentActivity
-) {
-    var name by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var subject by remember { mutableStateOf("") }
-    var description by remember { mutableStateOf("") }
-
-    var isSubmitting by remember { mutableStateOf(false) }
-
-    var nameError by remember { mutableStateOf<String?>(null) }
-    var emailError by remember { mutableStateOf<String?>(null) }
-    var subjectError by remember { mutableStateOf<String?>(null) }
-    var descriptionError by remember { mutableStateOf<String?>(null) }
-
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(
-                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                    colors = listOf(Color(0xFF1a1a2e), Color(0xFF16213e))
-                )
-            )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp)
-        ) {
-            // Header with back button
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .padding(bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                IconButton(
-                    onClick = onClose,
-                    modifier = Modifier.size(40.dp),
-                    enabled = !isSubmitting
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
-                        tint = Purple80,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Text(
-                    text = "Feedback",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Purple80,
-                    modifier = Modifier.weight(1f),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
-
-                Box(modifier = Modifier.size(40.dp))
-            }
-
-            // Form container
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item {
-                    Text(
-                        text = "We value your opinion! Tell us about your experience or report an issue.",
-                        fontSize = 14.sp,
-                        color = Color(0xFFB0B0B0),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-
-                item {
-                    // Name Field
-                    FeedbackTextField(
-                        value = name,
-                        onValueChange = { 
-                            name = it
-                            if (nameError != null) nameError = null
-                        },
-                        label = "Name",
-                        placeholder = "Enter your name",
-                        isError = nameError != null,
-                        errorText = nameError,
-                        enabled = !isSubmitting
-                    )
-                }
-
-                item {
-                    // Email Field
-                    FeedbackTextField(
-                        value = email,
-                        onValueChange = { 
-                            email = it
-                            if (emailError != null) emailError = null
-                        },
-                        label = "Email",
-                        placeholder = "Enter your email address",
-                        isError = emailError != null,
-                        errorText = emailError,
-                        enabled = !isSubmitting
-                    )
-                }
-
-                item {
-                    // Subject Field
-                    FeedbackTextField(
-                        value = subject,
-                        onValueChange = { 
-                            subject = it
-                            if (subjectError != null) subjectError = null
-                        },
-                        label = "Subject",
-                        placeholder = "Enter subject",
-                        isError = subjectError != null,
-                        errorText = subjectError,
-                        enabled = !isSubmitting
-                    )
-                }
-
-                item {
-                    // Description Field
-                    FeedbackTextField(
-                        value = description,
-                        onValueChange = { 
-                            description = it
-                            if (descriptionError != null) descriptionError = null
-                        },
-                        label = "Description",
-                        placeholder = "Describe your feedback, suggestion, or issue...",
-                        isError = descriptionError != null,
-                        errorText = descriptionError,
-                        singleLine = false,
-                        minLines = 4,
-                        maxLines = 8,
-                        enabled = !isSubmitting
-                    )
-                }
-
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Submit Button
-                    Button(
-                        onClick = {
-                            // Validate
-                            var isValid = true
-                            if (name.trim().isEmpty()) {
-                                nameError = "Name cannot be empty"
-                                isValid = false
-                            }
-                            if (email.trim().isEmpty()) {
-                                emailError = "Email cannot be empty"
-                                isValid = false
-                            } else if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) {
-                                emailError = "Please enter a valid email address"
-                                isValid = false
-                            }
-                            if (subject.trim().isEmpty()) {
-                                subjectError = "Subject cannot be empty"
-                                isValid = false
-                            }
-                            if (description.trim().isEmpty()) {
-                                descriptionError = "Description cannot be empty"
-                                isValid = false
-                            }
-
-                            if (isValid) {
-                                isSubmitting = true
-                                val db = FirebaseDatabase.getInstance()
-                                val ref = db.getReference("feedbacks")
-                                val feedbackId = ref.push().key ?: System.currentTimeMillis().toString()
-                                
-                                val feedbackData = mapOf(
-                                    "id" to feedbackId,
-                                    "name" to name.trim(),
-                                    "email" to email.trim(),
-                                    "subject" to subject.trim(),
-                                    "description" to description.trim(),
-                                    "timestamp" to System.currentTimeMillis()
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "",
+                                    fontSize = 14.sp
                                 )
-
-                                ref.child(feedbackId).setValue(feedbackData)
-                                    .addOnSuccessListener {
-                                        isSubmitting = false
-                                        Toast.makeText(context, "Feedback submitted successfully!", Toast.LENGTH_LONG).show()
-                                        onClose()
-                                    }
-                                    .addOnFailureListener { exception ->
-                                        isSubmitting = false
-                                        Toast.makeText(context, "Failed to submit feedback: ${exception.message}", Toast.LENGTH_LONG).show()
-                                    }
+                                Text(
+                                    text = "Feedback",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF5DADE2),
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .height(50.dp),
-                        shape = RoundedCornerShape(25.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = Purple80,
-                            disabledContainerColor = Purple80.copy(alpha = 0.5f)
-                        ),
-                        enabled = !isSubmitting
-                    ) {
-                        if (isSubmitting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = Color(0xFF1a1a2e),
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(
-                                text = "Submit Feedback",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1a1a2e)
-                            )
                         }
                     }
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun FeedbackTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    placeholder: String,
-    isError: Boolean,
-    errorText: String?,
-    enabled: Boolean = true,
-    singleLine: Boolean = true,
-    minLines: Int = 1,
-    maxLines: Int = 1
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth(0.9f),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (isError) Color(0xFFFF5252) else Purple80
-        )
-
-        OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            placeholder = {
-                Text(
-                    text = placeholder,
-                    color = Color.Gray,
-                    fontSize = 14.sp
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = singleLine,
-            minLines = minLines,
-            maxLines = maxLines,
-            enabled = enabled,
-            isError = isError,
-            shape = RoundedCornerShape(12.dp),
-            colors = TextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                disabledTextColor = Color.Gray,
-                focusedContainerColor = Color(0xFF0c1b2f),
-                unfocusedContainerColor = Color(0xFF0c1b2f),
-                disabledContainerColor = Color(0xFF0c1b2f).copy(alpha = 0.5f),
-                focusedIndicatorColor = Purple80,
-                unfocusedIndicatorColor = Color(0xFF2A5A8A),
-                errorIndicatorColor = Color(0xFFFF5252),
-                errorContainerColor = Color(0xFF0c1b2f)
-            )
-        )
-
-        if (isError && errorText != null) {
-            Text(
-                text = errorText,
-                color = Color(0xFFFF5252),
-                fontSize = 12.sp,
-                modifier = Modifier.padding(start = 4.dp)
-            )
         }
     }
 }

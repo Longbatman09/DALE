@@ -165,7 +165,12 @@ fun ChangePasswordScreen(
             else -> 0
         }
     }
-    val pinMaxLength = if (storedPinLength > 0) storedPinLength else 10
+    val groupPinLength = remember(group) {
+        group?.app1PinLength?.takeIf { it > 0 }
+            ?: group?.app2PinLength?.takeIf { it > 0 }
+            ?: 0
+    }
+    val pinMaxLength = if (storedPinLength > 0) storedPinLength else if (groupPinLength > 0) groupPinLength else 10
     val totalPinSteps = if (isBackupRegistration) 2 else 3
     val displayStepNumber = if (isBackupRegistration) step - 1 else step
 
@@ -187,7 +192,7 @@ fun ChangePasswordScreen(
         val minLength = when {
             isPatternMode -> 1
             isPasswordMode -> 6
-            storedPinLength > 0 -> storedPinLength
+            groupPinLength > 0 -> groupPinLength
             else -> 4
         }
 
@@ -195,9 +200,14 @@ fun ChangePasswordScreen(
             errorMessage = when {
                 isPatternMode -> "Please draw a pattern"
                 isPasswordMode -> "Password must be at least 6 characters"
-                storedPinLength > 0 -> "PIN must be $storedPinLength digits"
+                groupPinLength > 0 -> "PIN must be $groupPinLength digits"
                 else -> "PIN must be at least 4 digits"
             }
+            return
+        }
+
+        if (isPinMode && groupPinLength > 0 && attempt.length != groupPinLength) {
+            errorMessage = "PIN must be $groupPinLength digits"
             return
         }
 
@@ -277,7 +287,7 @@ fun ChangePasswordScreen(
                 if (newPin == confirmPin) {
                     if (group != null) {
                         val hashedPin = hashPin(newPin)
-                        val newPinLength = newPin.length
+                        val newPinLength = groupPinLength.takeIf { it > 0 } ?: newPin.length
                         val updatedGroup = if (appPackage == group.app1PackageName) {
                             group.copy(
                                 app1LockPin = hashedPin,
@@ -431,8 +441,8 @@ fun ChangePasswordScreen(
 
                         PinDisplayBox(
                             pin = currentPinValue,
-                            appIndex = if (step == 1 && storedPinLength > 0) 2 else 1,
-                            app1PinLength = storedPinLength,
+                            appIndex = if ((step == 1 && storedPinLength > 0) || groupPinLength > 0) 2 else 1,
+                            app1PinLength = if (groupPinLength > 0) groupPinLength else storedPinLength,
                             step = if (step == 3) 1 else 0,
                             firstInputLength = newPin.length,
                             dotsAlpha = pinDotsAlpha,
@@ -460,14 +470,16 @@ fun ChangePasswordScreen(
 
                     val pinEntryMaxLength = when {
                         step == 3 && newPin.isNotEmpty() -> newPin.length
-                        step == 2 -> 10
+                        step == 2 -> if (groupPinLength > 0) groupPinLength else 10
                         storedPinLength > 0 -> storedPinLength
+                        groupPinLength > 0 -> groupPinLength
                         else -> pinMaxLength
                     }
                     val pinMinLengthForStep = when {
                         step == 3 -> if (newPin.isNotEmpty()) newPin.length else 4
-                        step == 2 -> 4
+                        step == 2 -> if (groupPinLength > 0) groupPinLength else 4
                         storedPinLength > 0 -> storedPinLength
+                        groupPinLength > 0 -> groupPinLength
                         else -> 4
                     }
                     val isConfirmEnabled = when (step) {
