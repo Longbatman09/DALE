@@ -37,6 +37,18 @@ class SharedPreferencesManager private constructor(context: Context) {
         return sharedPreferences.getBoolean(KEY_SETUP_COMPLETED, false)
     }
 
+    fun shouldShowDonationSupportDialog(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (!isSetupCompleted()) return false
+        val today = formatDonationPromptDay(nowMillis)
+        return sharedPreferences.getString(KEY_LAST_DONATION_PROMPT_DAY, null) != today
+    }
+
+    fun markDonationSupportDialogShown(nowMillis: Long = System.currentTimeMillis()) {
+        sharedPreferences.edit()
+            .putString(KEY_LAST_DONATION_PROMPT_DAY, formatDonationPromptDay(nowMillis))
+            .apply()
+    }
+
     fun saveAppGroup(appGroup: AppGroup) {
         val json = gson.toJson(appGroup)
         sharedPreferences.edit().putString("app_group_${appGroup.id}", json).apply()
@@ -285,6 +297,10 @@ class SharedPreferencesManager private constructor(context: Context) {
          return emptySet()
      }
 
+    private fun formatDonationPromptDay(timestamp: Long): String {
+        return SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timestamp))
+    }
+
      // ── Last Opened App Tracking (Step 1 & 2) ────────────────────────────────────
 
      /**
@@ -417,6 +433,7 @@ class SharedPreferencesManager private constructor(context: Context) {
     companion object {
         private const val PREFS_NAME = "DALE_PREFS"
         private const val KEY_SETUP_COMPLETED = "setup_completed"
+        private const val KEY_LAST_DONATION_PROMPT_DAY = "last_donation_prompt_day"
         private const val KEY_PROTECTION_ENABLED = "protection_enabled"
         private const val KEY_INTRO_SHOWN = "intro_shown"
         private const val KEY_LAST_SPLASH_VIDEO_TIME = "last_splash_video_time"

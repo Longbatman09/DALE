@@ -343,10 +343,63 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
     var showFeedback by remember { mutableStateOf(false) }
     var showTips by remember { mutableStateOf(false) }
     var showVibrationDialog by remember { mutableStateOf(false) }
+    var showDonationSupportDialog by remember { mutableStateOf(false) }
     var protectionActive by remember { mutableStateOf(false) }
     var protectionEnabled by remember { mutableStateOf(sharedPrefs.isProtectionEnabled()) }
     var vibrationLevel by remember { mutableStateOf(sharedPrefs.getGlobalVibrationLevel()) }
     var showProtectionDisableConfirmation by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        showDonationSupportDialog = sharedPrefs.shouldShowDonationSupportDialog()
+    }
+
+    if (showDonationSupportDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                sharedPrefs.markDonationSupportDialogShown()
+                showDonationSupportDialog = false
+            },
+            title = {
+                Text(
+                    text = "Support DALE",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "DALE is a free app built by a solo developer. If it helps you, consider donating to support ongoing development.",
+                    color = Color(0xFFE0E0E0),
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        sharedPrefs.markDonationSupportDialogShown()
+                        showDonationSupportDialog = false
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            data = "https://buymeacoffee.com".toUri()
+                        }
+                        context.startActivity(intent)
+                    }
+                ) {
+                    Text("Donate", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        sharedPrefs.markDonationSupportDialogShown()
+                        showDonationSupportDialog = false
+                    }
+                ) {
+                    Text("Later")
+                }
+            },
+            containerColor = Color(0xFF03193B)
+        )
+    }
 
     // Refresh groups when screen is visible
     LaunchedEffect(refreshTrigger) {
