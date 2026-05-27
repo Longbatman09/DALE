@@ -8,21 +8,21 @@ DALE is an Android app-locker that protects paired apps with a dedicated lock sc
 
 ## Features
 
-### Paired app groups
+### - Paired app groups
 Features independent credentials (PIN or Pattern or Password) per app group, allowing customized security for your paired applications.
 
-### Crossover unlock
+### - Crossover unlock
 Seamlessly switch between paired apps without repeatedly unlocking, thanks to a one-time transition token.
 Displays a secure overlay lock screen when opening protected apps, complete with optional biometric unlock.
 
 ![image alt](https://github.com/Longbatman09/DALE/blob/d67aa7a23ac0856f2fb61813261c7b8d05555dcc/lockscreen.png)
 
-### Uninstall protection
+### - Uninstall protection
 Provides uninstall protection for your protected apps to prevent unauthorized deletion.
 
 ![image alt](https://github.com/Longbatman09/DALE/blob/d67aa7a23ac0856f2fb61813261c7b8d05555dcc/uninstallprotection.png)
 
-### Activity & usage logs
+### - Activity & usage logs
 Maintains thorough activity and usage logs for each protected app group with local storage and optional analytics support.
 
 ## Structure and Flow 
