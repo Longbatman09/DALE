@@ -36,6 +36,7 @@ Dale follows the structure as per the below image.
 - Personalize Lock Screen
 - App Monitoring via Usage Polling
 - More Stable Animations and UI
+- Ability to change lock type for a group
 
 ## Key permissions (AndroidManifest.xml)
 - `POST_NOTIFICATIONS` – status and protection warnings.
