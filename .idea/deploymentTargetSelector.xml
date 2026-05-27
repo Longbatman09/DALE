@@ -4,10 +4,10 @@
     <selectionStates>
       <SelectionState runConfigName="app">
         <option name="selectionMode" value="DROPDOWN" />
-        <DropdownSelection timestamp="2026-05-26T15:21:10.350334700Z">
+        <DropdownSelection timestamp="2026-05-26T18:23:43.915603400Z">
           <Target type="DEFAULT_BOOT">
             <handle>
-              <DeviceId pluginId="PhysicalDevice" identifier="serial=R9ZX1031STT" />
+              <DeviceId pluginId="PhysicalDevice" identifier="serial=RZGL225BSFZ" />
             </handle>
           </Target>
         </DropdownSelection>
@@ -15,12 +15,12 @@
           <targets>
             <Target type="DEFAULT_BOOT">
               <handle>
-                <DeviceId pluginId="PhysicalDevice" identifier="serial=HGALD45R" />
+                <DeviceId pluginId="PhysicalDevice" identifier="serial=e503c537d030" />
               </handle>
             </Target>
             <Target type="DEFAULT_BOOT">
               <handle>
-                <DeviceId pluginId="PhysicalDevice" identifier="serial=RZ8R41EBEQR" />
+                <DeviceId pluginId="PhysicalDevice" identifier="serial=R9ZX1031STT" />
               </handle>
             </Target>
           </targets>

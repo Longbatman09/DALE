@@ -60,20 +60,12 @@ import androidx.compose.ui.unit.sp
 import com.example.dale.ui.theme.DALETheme
 import com.example.dale.ui.theme.Purple80
 import com.example.dale.utils.SharedPreferencesManager
-import java.security.MessageDigest
+import com.example.dale.utils.HashUtils
+import androidx.compose.ui.res.painterResource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class ChangePasswordActivity : ComponentActivity() {
-    private fun hashPin(pin: String): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest(pin.toByteArray())
-            .joinToString("") { "%02x".format(it) }
-    }
-
-    private fun verifyPin(inputPin: String, storedHash: String): Boolean {
-        return hashPin(inputPin) == storedHash
-    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -91,8 +83,8 @@ class ChangePasswordActivity : ComponentActivity() {
                     appPackage = appPackage,
                     isBackupRegistration = isBackupRegistration,
                     activity = this,
-                    hashPin = { pin -> this@ChangePasswordActivity.hashPin(pin) },
-                    verifyPin = { input, stored -> this@ChangePasswordActivity.verifyPin(input, stored) }
+                    hashPin = { pin -> HashUtils.hashPin(pin) },
+                    verifyPin = { input, stored -> HashUtils.verifyPin(input, stored) }
                 )
             }
         }

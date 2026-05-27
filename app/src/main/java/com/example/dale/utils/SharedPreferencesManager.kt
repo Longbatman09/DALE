@@ -341,6 +341,26 @@ class SharedPreferencesManager private constructor(context: Context) {
      }
 
     /**
+     * Get the partner app package for a given package if it belongs to a group
+     */
+    fun getPartnerPackage(packageName: String): String? {
+        val groups = getAllAppGroups()
+        for (group in groups) {
+            if (group.app1PackageName == packageName) return group.app2PackageName
+            if (group.app2PackageName == packageName) return group.app1PackageName
+        }
+        return null
+    }
+
+    /**
+     * Get the app group for a specific package
+     */
+    fun getAppGroupForPackage(packageName: String): AppGroup? {
+        val groups = getAllAppGroups()
+        return groups.find { it.app1PackageName == packageName || it.app2PackageName == packageName }
+    }
+
+    /**
      * Get all locked apps from all groups
      */
     fun getAllLockedApps(): Set<String> {
@@ -351,6 +371,27 @@ class SharedPreferencesManager private constructor(context: Context) {
             lockedApps.add(group.app2PackageName)
         }
         return lockedApps
+    }
+
+    /**
+     * Transition Token Mechanism (LS Crossover)
+     */
+    fun setTransitionToken(targetPackage: String, enabled: Boolean) {
+        sharedPreferences.edit()
+            .putBoolean("transition_token_$targetPackage", enabled)
+            .apply()
+    }
+
+    fun hasTransitionToken(targetPackage: String): Boolean {
+        return sharedPreferences.getBoolean("transition_token_$targetPackage", false)
+    }
+
+    fun consumeTransitionToken(targetPackage: String): Boolean {
+        val hasToken = hasTransitionToken(targetPackage)
+        if (hasToken) {
+            setTransitionToken(targetPackage, false)
+        }
+        return hasToken
     }
 
     companion object {

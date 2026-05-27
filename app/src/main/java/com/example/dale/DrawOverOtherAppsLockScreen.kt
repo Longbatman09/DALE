@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -117,6 +119,21 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         updateTargetState(intent)
         refreshBiometricState()
 
+        // LS Crossover Mechanism: Check for transition token
+        targetPackageName?.let { pkg ->
+            if (SharedPreferencesManager.getInstance(this).consumeTransitionToken(pkg)) {
+                // Log the bypass
+                com.example.dale.utils.AppActivityLogger.logAppOpened(
+                    pkg,
+                    "", // Name will be fetched in unlockApp logs if needed
+                    groupId ?: "Unknown",
+                    "LS_CROSSOVER_TOKEN"
+                )
+                unlockApp(pkg)
+                return
+            }
+        }
+
         // Safety check: Never show lock screen for DALE itself
         if (targetPackageName == packageName) {
             finish()
@@ -153,6 +170,21 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         setIntent(intent)
         updateTargetState(intent)
         refreshBiometricState()
+
+        // LS Crossover Mechanism: Check for transition token
+        targetPackageName?.let { pkg ->
+            if (SharedPreferencesManager.getInstance(this).consumeTransitionToken(pkg)) {
+                // Log the bypass
+                com.example.dale.utils.AppActivityLogger.logAppOpened(
+                    pkg,
+                    "", // Name will be fetched in unlockApp logs if needed
+                    groupId ?: "Unknown",
+                    "LS_CROSSOVER_TOKEN"
+                )
+                unlockApp(pkg)
+                return
+            }
+        }
         tryAutoBiometricPrompt()
     }
 
@@ -275,8 +307,15 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         // Mark PIN as verified before unlocking
         isPinVerified = true
 
+        val sharedPrefs = SharedPreferencesManager.getInstance(this)
         val sourcePackage = targetPackageName
         val currentGroupId = groupId
+
+        // LS Crossover: If we are unlocking an app in a group, 
+        // set a transition token for the app being launched.
+        // This ensures the target app skips its lock screen.
+        sharedPrefs.setTransitionToken(packageName, true)
+
         val crossUnlockSource = sourcePackage?.takeIf { it.isNotBlank() && it != packageName }
         val isCrossUnlock = crossUnlockSource != null
 
@@ -595,7 +634,7 @@ fun LockScreenContent(
                 otherAppHash != null &&
                 otherAppPackage != null &&
                 otherAppType?.uppercase() == appInfo.lockType.uppercase() &&
-                hashedInput == otherAppHash
+                com.example.dale.utils.HashUtils.verifyPin(inputCredential, otherAppHash)
             ) {
                 errorMessage = null
                 onVerified()
