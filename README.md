@@ -1,5 +1,7 @@
 # DALE
 
+
+
 DALE is an Android app-locker that protects paired apps with a dedicated lock screen. It uses an accessibility service to detect app switches, shows an overlay lock screen when a protected app is opened, and keeps activity/usage logs for each protected app group.
 
 ![image alt](https://github.com/Longbatman09/DALE/blob/d67aa7a23ac0856f2fb61813261c7b8d05555dcc/Banner.png)
@@ -49,7 +51,15 @@ Dale follows the structure as per the below image.
 - **minSdk 26**, **targetSdk 36**, **compileSdk 36**
 - `app/google-services.json` (Firebase config)
 
-## Setup & run
+## Installation 
+
+Download the latest APK from the [Releases](https://github.com/Longbatman09/DALE/releases) page.
+
+> [!CAUTION]
+> The release version on GitHub might be flagged or blocked by **Google Play Protect** during installation. For a smoother experience, it is recommended to install the APK using **ADB** (`adb install dale-app.apk`) or to temporarily disable Play Protect.
+
+
+## Setup & run 
 1. Open the project in Android Studio.
 2. Ensure `app/google-services.json` is present.
 3. Sync Gradle and run the `app` configuration on a device/emulator.
@@ -66,3 +76,6 @@ Dale follows the structure as per the below image.
 app/                     # Main Android app module
 References/              # Reference code (material-components-android)
 ```
+
+## Credits
+ **B.Vishal Chandrakanth** - Solo developer (Founder of Coco Copi Developers)
