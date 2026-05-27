@@ -45,6 +45,10 @@ Dale follows the structure as per the below image.
 - `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_DATA_SYNC` – background monitoring service.
 - `INTERNET` – Firebase analytics/database.
 
+## Screenshots
+![image alt](https://github.com/Longbatman09/DALE/blob/db1557fe5240f34ca271ceb4b29453070af89053/1.png)
+![image alt](https://github.com/Longbatman09/DALE/blob/db1557fe5240f34ca271ceb4b29453070af89053/2.png)
+
 ## Requirements
 - **Android Studio** (or Gradle CLI)
 - **JDK 11**
