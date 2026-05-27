@@ -56,8 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.*
+import com.example.dale.utils.HashUtils.hashPin
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -72,6 +71,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
@@ -232,12 +234,6 @@ class PasswordSetupActivity : ComponentActivity() {
         }
         startActivity(intent)
         finish()
-    }
-
-    private fun hashPin(pin: String): String {
-        return MessageDigest.getInstance("SHA-256")
-            .digest(pin.toByteArray())
-            .joinToString("") { "%02x".format(it) }
     }
 }
 
@@ -1547,7 +1543,5 @@ fun BiometricBackupCredentialDialog(
         confirmButton = {}
     )
 }
-
-
 
 

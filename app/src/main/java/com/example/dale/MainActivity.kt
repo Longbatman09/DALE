@@ -732,7 +732,7 @@ fun HomeScreen(modifier: Modifier = Modifier, activity: ComponentActivity? = nul
                          "Tips" -> showTips = true
                          "About" -> showAbout = true
                          "Feedback" -> showFeedback = true
-                         "Vibration Strength" -> showVibrationDialog = true
+                         "Vibration " -> showVibrationDialog = true
                      }
                     isMenuOpen = false
                  }
@@ -899,10 +899,10 @@ fun SideMenu(
 
 
             MenuItem(
-                text = "Vibration Strength: $vibrationLevel",
+                text = "Vibration : $vibrationLevel",
                 iconRes = R.drawable.vibraton,
                 iconSize = 28.dp,
-                onClick = { onMenuItemClick("Vibration Strength") }
+                onClick = { onMenuItemClick("Vibration ") }
             )
 
             Spacer(modifier = Modifier.height(8.dp))

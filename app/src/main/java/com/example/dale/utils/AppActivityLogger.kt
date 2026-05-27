@@ -19,6 +19,11 @@ object AppActivityLogger {
     private lateinit var firebaseAnalytics: FirebaseAnalytics
     private var loggingEnabled = true
 
+    private fun hasAnalyticsConsent(): Boolean {
+        return context.getSharedPreferences("dale_prefs", Context.MODE_PRIVATE)
+            .getBoolean("analytics_enabled", false)
+    }
+
     fun initialize(application: Context) {
         context = application
         firebaseAnalytics = FirebaseAnalytics.getInstance(application)
@@ -41,17 +46,15 @@ object AppActivityLogger {
         groupName: String,
         detectionMethod: String
     ) {
-        if (!loggingEnabled) return
+        if (!loggingEnabled || !hasAnalyticsConsent()) return
 
         val timestamp = Instant.now().toString()
         val message = "[$timestamp] APP_OPENED | Group: $groupName | App: $appName ($packageName) | Method: $detectionMethod"
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
-                // Log to Firebase
+                // Log to Firebase without sensitive app/package names
                 val bundle = Bundle().apply {
-                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
-                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
                     putString("group_name", groupName)
                     putString("detection_method", detectionMethod)
                 }
@@ -85,17 +88,15 @@ object AppActivityLogger {
         groupName: String,
         detectionMethod: String
     ) {
-        if (!loggingEnabled) return
+        if (!loggingEnabled || !hasAnalyticsConsent()) return
 
         val timestamp = Instant.now().toString()
         val message = "[$timestamp] APP_CLOSED | Group: $groupName | App: $appName ($packageName) | Method: $detectionMethod"
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
-                // Log to Firebase
+                // Log to Firebase without sensitive app/package names
                 val bundle = Bundle().apply {
-                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
-                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
                     putString("group_name", groupName)
                     putString("detection_method", detectionMethod)
                 }
@@ -125,17 +126,15 @@ object AppActivityLogger {
         groupName: String,
         detectionMethod: String
     ) {
-        if (!loggingEnabled) return
+        if (!loggingEnabled || !hasAnalyticsConsent()) return
 
         val timestamp = Instant.now().toString()
         val message = "[$timestamp] LOCK_SCREEN_TRIGGERED | Group: $groupName | App: $appName ($packageName) | Method: $detectionMethod"
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
-                // Log to Firebase
+                // Log to Firebase without sensitive app/package names
                 val bundle = Bundle().apply {
-                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
-                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
                     putString("group_name", groupName)
                     putString("detection_method", detectionMethod)
                 }
@@ -162,7 +161,7 @@ object AppActivityLogger {
         groupName: String,
         success: Boolean
     ) {
-        if (!loggingEnabled) return
+        if (!loggingEnabled || !hasAnalyticsConsent()) return
 
         val timestamp = Instant.now().toString()
         val status = if (success) "SUCCESS" else "FAILED"
@@ -170,10 +169,8 @@ object AppActivityLogger {
 
         thread(name = "LogThread-$packageName", isDaemon = true) {
             try {
-                // Log to Firebase
+                // Log to Firebase without sensitive app/package names
                 val bundle = Bundle().apply {
-                    putString(FirebaseAnalytics.Param.ITEM_ID, packageName)
-                    putString(FirebaseAnalytics.Param.ITEM_NAME, appName)
                     putString("group_name", groupName)
                     putBoolean("success", success)
                 }
