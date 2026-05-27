@@ -26,6 +26,7 @@ Maintains thorough activity and usage logs for each protected app group with loc
 ## Structure and Flow 
 Dale follows the structure as per the below image. 
 
+![image alt](https://github.com/Longbatman09/DALE/blob/1c0c823bca10eb1dbf128c056bd9af6a7817357e/structure%20and%20flow.png)
 
 ## Feauture Plans
 - Add Intruder camera capture
