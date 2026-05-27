@@ -23,6 +23,17 @@ Provides uninstall protection for your protected apps to prevent unauthorized de
 ### Activity & usage logs
 Maintains thorough activity and usage logs for each protected app group with local storage and optional analytics support.
 
+## Structure and Flow 
+Dale follows the structure as per the below image. 
+
+
+## Feauture Plans
+- Add Intruder camera capture
+- Multi Dot pattern Support
+- Personalize Lock Screen
+- App Monitoring via Usage Polling
+- More Stable Animations and UI
+
 ## Key permissions (AndroidManifest.xml)
 - `POST_NOTIFICATIONS` – status and protection warnings.
 - `RECEIVE_BOOT_COMPLETED` – restart monitoring after boot/update.
