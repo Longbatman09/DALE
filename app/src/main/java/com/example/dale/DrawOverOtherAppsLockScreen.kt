@@ -68,6 +68,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     private var groupId by mutableStateOf<String?>(null)
     private var isPinVerified = false
     private var isDismissing = false
+    private var isTokenBypass = false
     private var canUseBiometricForTarget = false
     private var isBiometricOnlyForTarget = false
     private var biometricTriggeredOnce = false
@@ -122,13 +123,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         // LS Crossover Mechanism: Check for transition token
         targetPackageName?.let { pkg ->
             if (SharedPreferencesManager.getInstance(this).consumeTransitionToken(pkg)) {
-                // Log the bypass
-                com.example.dale.utils.AppActivityLogger.logAppOpened(
-                    pkg,
-                    "", // Name will be fetched in unlockApp logs if needed
-                    groupId ?: "Unknown",
-                    "LS_CROSSOVER_TOKEN"
-                )
+                isTokenBypass = true
                 unlockApp(pkg)
                 return
             }
@@ -174,13 +169,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         // LS Crossover Mechanism: Check for transition token
         targetPackageName?.let { pkg ->
             if (SharedPreferencesManager.getInstance(this).consumeTransitionToken(pkg)) {
-                // Log the bypass
-                com.example.dale.utils.AppActivityLogger.logAppOpened(
-                    pkg,
-                    "", // Name will be fetched in unlockApp logs if needed
-                    groupId ?: "Unknown",
-                    "LS_CROSSOVER_TOKEN"
-                )
+                isTokenBypass = true
                 unlockApp(pkg)
                 return
             }
@@ -311,17 +300,19 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         val sourcePackage = targetPackageName
         val currentGroupId = groupId
 
-        // LS Crossover: If we are unlocking an app in a group, 
-        // set a transition token for the app being launched.
-        // This ensures the target app skips its lock screen.
-        sharedPrefs.setTransitionToken(packageName, true)
-
         val crossUnlockSource = sourcePackage?.takeIf { it.isNotBlank() && it != packageName }
         val isCrossUnlock = crossUnlockSource != null
 
+        // LS Crossover: Only set a transition token if we are performing a cross-app launch.
+        // This ensures the target app (packageName) can skip its own lock screen once.
+        // Normal unlocks rely on in-memory session grace periods managed by AppLockManager.
+        if (isCrossUnlock) {
+            sharedPrefs.setTransitionToken(packageName, true)
+        }
+
         // For cross-unlock, first app is explicitly closed/backgrounded before opening app 2.
         if (isCrossUnlock) {
-            closeSourceAppBeforeCrossUnlock(crossUnlockSource, currentGroupId)
+            closeSourceAppBeforeCrossUnlock(crossUnlockSource!!, currentGroupId)
         }
 
         // Mark unlock transition immediately.
@@ -337,6 +328,7 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
                 putExtra("UNLOCKED_PACKAGE", packageName)
                 putExtra("SOURCE_PACKAGE", sourcePackage)
                 putExtra("GROUP_ID", currentGroupId)
+                putExtra("IS_CROSSOVER", isTokenBypass || isCrossUnlock)
             })
 
             recordAppOpenedLog(currentGroupId, packageName)
@@ -370,8 +362,6 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
     }
 
     private fun closeSourceAppBeforeCrossUnlock(sourcePackage: String, groupId: String?) {
-        recordAppClosedLog(groupId, sourcePackage)
-
         val homeIntent = Intent(Intent.ACTION_MAIN).apply {
             addCategory(Intent.CATEGORY_HOME)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -411,6 +401,13 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
                 timestamp = timestamp
             )
         )
+
+        com.example.dale.utils.AppActivityLogger.logAppOpened(
+            openedPackage,
+            appName,
+            group.groupName,
+            "Lock Screen"
+        )
         
         // ✅ STEP 1: Store the last opened protected app with its group
         sharedPrefs.saveLastOpenedApp(
@@ -446,10 +443,14 @@ class DrawOverOtherAppsLockScreen : FragmentActivity() {
         val timestamp = SimpleDateFormat("dd MMM yyyy, HH:mm:ss", Locale.getDefault())
             .format(Date())
 
-        // ✅ FIX #6: Improved deduplication logic with null safety
+        // ✅ Only log CLOSED if there was a prior OPENED for this app
         val lastEvent = sharedPrefs.getLatestActivityEventForPackage(targetGroupId, closedPackage)
-        if (lastEvent?.uppercase(Locale.ROOT) == "CLOSED") {
-            android.util.Log.d("DrawOverOtherAppsLockScreen", "Skipped duplicate CLOSED for $closedPackage")
+        sharedPrefs.setTransitionToken(closedPackage, false)
+        if (lastEvent?.uppercase(Locale.ROOT) != "OPENED") {
+            android.util.Log.d(
+                "DrawOverOtherAppsLockScreen",
+                "Skipped CLOSED for $closedPackage (lastEvent=$lastEvent)"
+            )
             return
         }
 
@@ -601,11 +602,9 @@ fun LockScreenContent(
         isVerifying = true
         delay(150)
 
-        val hashedInput = MessageDigest.getInstance("SHA-256")
-            .digest(inputCredential.toByteArray())
-            .joinToString("") { "%02x".format(it) }
+        val isMatch = com.example.dale.utils.HashUtils.verifyPin(inputCredential, appInfo.lockHash)
 
-        if (hashedInput == appInfo.lockHash) {
+        if (isMatch) {
             errorMessage = null
             onVerified()
             onUnlockSuccess(appInfo.appPackage)

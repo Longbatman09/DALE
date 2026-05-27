@@ -394,6 +394,26 @@ class SharedPreferencesManager private constructor(context: Context) {
         return hasToken
     }
 
+    fun clearAllTransitionTokens(exceptPackages: Set<String> = emptySet()) {
+        val allPrefs = sharedPreferences.all
+        val editor = sharedPreferences.edit()
+        var changed = false
+        
+        for (key in allPrefs.keys) {
+            if (key.startsWith("transition_token_")) {
+                val pkg = key.substring("transition_token_".length)
+                if (pkg !in exceptPackages) {
+                    editor.remove(key)
+                    changed = true
+                }
+            }
+        }
+        
+        if (changed) {
+            editor.apply()
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "DALE_PREFS"
         private const val KEY_SETUP_COMPLETED = "setup_completed"

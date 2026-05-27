@@ -20,6 +20,7 @@ class AppLockManager private constructor(private val context: Context) {
 
     // Session state (Thread-safe via synchronization where necessary)
     private val unlockedSessions = mutableSetOf<String>()
+    private val crossoverSessions = mutableSetOf<String>()
     private val unlockingApps = mutableSetOf<String>()
     private val backgroundSince = mutableMapOf<String, Long>()
     private val lockInProgress = mutableSetOf<String>()
@@ -59,7 +60,7 @@ class AppLockManager private constructor(private val context: Context) {
     }
 
     @Synchronized
-    fun onAppUnlocked(destinationPackage: String, sourcePackage: String?) {
+    fun onAppUnlocked(destinationPackage: String, sourcePackage: String?, isCrossover: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
         unlockingApps.remove(destinationPackage)
         unlockedSessions.add(destinationPackage)
@@ -67,12 +68,22 @@ class AppLockManager private constructor(private val context: Context) {
         lockInProgress.remove(destinationPackage)
         unlockTimestamps[destinationPackage] = now
 
+        if (isCrossover) {
+            crossoverSessions.add(destinationPackage)
+            Log.d(TAG, "Crossover session started for $destinationPackage")
+        }
+
         if (!sourcePackage.isNullOrBlank() && sourcePackage != destinationPackage) {
             unlockingApps.remove(sourcePackage)
             unlockedSessions.add(sourcePackage)
             backgroundSince.remove(sourcePackage)
             lockInProgress.remove(sourcePackage)
             unlockTimestamps[sourcePackage] = now
+
+            // If it's a crossover, both apps in the transition are marked for immediate re-lock on exit.
+            if (isCrossover) {
+                crossoverSessions.add(sourcePackage)
+            }
         }
     }
 
@@ -94,6 +105,10 @@ class AppLockManager private constructor(private val context: Context) {
             markAppClosed(previous, now)
         }
 
+        // LS Crossover: Clear tokens for any app other than the one currently coming to foreground.
+        // This ensures a token for App B is destroyed if the user switches to App C instead.
+        sharedPrefs.clearAllTransitionTokens(exceptPackages = setOf(currentPackage))
+
         lastForegroundPackage = currentPackage
         cleanupExpiredStates(now)
 
@@ -113,6 +128,10 @@ class AppLockManager private constructor(private val context: Context) {
         if (previous != context.packageName) {
             markAppClosed(previous, now)
         }
+        
+        // LS Crossover: If we are no longer in a protected app, clear all bypass tokens.
+        sharedPrefs.clearAllTransitionTokens()
+
         lastForegroundPackage = null
     }
 
@@ -121,6 +140,7 @@ class AppLockManager private constructor(private val context: Context) {
         if (pkg in lockInProgress) return false
 
         // 2. Check unlock grace period (recent manual unlock)
+        // This ensures the lock screen doesn't reappear immediately after a successful unlock.
         val unlockTime = unlockTimestamps[pkg]
         if (unlockTime != null && (now - unlockTime) < unlockGracePeriodMs) {
             backgroundSince.remove(pkg)
@@ -138,13 +158,8 @@ class AppLockManager private constructor(private val context: Context) {
             unlockedSessions.remove(pkg)
         }
 
-        // 4. Check persistent state in SharedPreferences
-        val latestEvent = sharedPrefs.getLatestActivityEventForPackage(groupId, pkg)
-        if (latestEvent == "OPENED") {
-            // If the DB says it's open, trust it but re-verify session
-            unlockedSessions.add(pkg)
-            return false
-        }
+        // Persistent state check (formerly Step 4) removed to prevent lock screen skips 
+        // due to out-of-sync activity logs. We now rely strictly on in-memory sessions.
 
         return true
     }
@@ -167,6 +182,15 @@ class AppLockManager private constructor(private val context: Context) {
 
         backgroundSince[pkg] = now
         lockInProgress.remove(pkg)
+        sharedPrefs.setTransitionToken(pkg, false)
+
+        // LS Crossover: If this was a crossover bypass, close it immediately on exit.
+        if (pkg in crossoverSessions) {
+            unlockedSessions.remove(pkg)
+            crossoverSessions.remove(pkg)
+            unlockTimestamps.remove(pkg) // Ensure immediate lock on re-entry (bypass grace period)
+            Log.d(TAG, "Immediate lock triggered for crossover session: $pkg")
+        }
 
         val groups = sharedPrefs.getAllAppGroups()
         val group = groups.find { it.app1PackageName == pkg || it.app2PackageName == pkg }

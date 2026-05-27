@@ -48,7 +48,8 @@ class AppMonitorService : Service() {
                     lockManager.onAppUnlocking(destinationPackage, sourcePackage, groupId)
                 }
                 ACTION_APP_UNLOCKED -> {
-                    lockManager.onAppUnlocked(destinationPackage, sourcePackage)
+                    val isCrossover = intent.getBooleanExtra("IS_CROSSOVER", false)
+                    lockManager.onAppUnlocked(destinationPackage, sourcePackage, isCrossover)
                 }
             }
         }

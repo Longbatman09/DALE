@@ -735,42 +735,7 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
              }
          }
 
-         // Log app opened if current app is in a protected group
-         logAppOpenedIfProtected(currentForegroundPackage, sharedPrefs)
-
-         checkAndLockApp(currentForegroundPackage, triggeringPackage, System.currentTimeMillis())
-     }
-
-     private fun logAppOpenedIfProtected(packageName: String, sharedPrefs: SharedPreferencesManager) {
-         try {
-             val appGroups = sharedPrefs.getAllAppGroups()
-             for (group in appGroups) {
-                 if (packageName == group.app1PackageName) {
-                     val message = " APP_OPENED: ${group.app1Name} ($packageName) from group '${group.groupName}' [Accessibility Service]"
-                     Log.d("AppDetection", message)
-                     AppActivityLogger.logAppOpened(
-                         packageName,
-                         group.app1Name,
-                         group.groupName,
-                         "Accessibility Service"
-                     )
-                     return
-                 }
-                 if (packageName == group.app2PackageName) {
-                     val message = " APP_OPENED: ${group.app2Name} ($packageName) from group '${group.groupName}' [Accessibility Service]"
-                     Log.d("AppDetection", message)
-                     AppActivityLogger.logAppOpened(
-                         packageName,
-                         group.app2Name,
-                         group.groupName,
-                         "Accessibility Service"
-                     )
-                     return
-                 }
-             }
-         } catch (e: Exception) {
-             Log.e(TAG, "Error logging app opened: $packageName", e)
-         }
+        checkAndLockApp(currentForegroundPackage, triggeringPackage, System.currentTimeMillis())
      }
 
       private fun logAppClosedIfProtected(
@@ -783,20 +748,16 @@ class DALEAppLockAccessibilityService : AccessibilityService() {
           try {
               Log.d("AppDetection", " Checking if $packageName should be logged as closed...")
 
-              // ✅ STEP 3: Check if last log entry for this package is "OPENED"
-              // If it's already "CLOSED", skip logging to prevent duplicates
+              // ✅ Only log CLOSED if last event was OPENED
               val lastEvent = sharedPrefs.getLatestActivityEventForPackage(groupId, packageName)
+              sharedPrefs.setTransitionToken(packageName, false)
 
-              if (lastEvent?.uppercase(Locale.ROOT) == "CLOSED") {
-                  Log.d("AppDetection", "⏭️ Skipped logging CLOSED - last event was already CLOSED for $packageName")
+              if (lastEvent?.uppercase(Locale.ROOT) != "OPENED") {
+                  Log.d("AppDetection", "⏭️ Skipped logging CLOSED - last event was $lastEvent for $packageName")
                   return
               }
 
-              if (lastEvent == null) {
-                  Log.d("AppDetection", "⚠️ No previous log found for $packageName - will log CLOSED anyway")
-              } else {
-                  Log.d("AppDetection", "✅ Last event was $lastEvent - safe to log CLOSED")
-              }
+              Log.d("AppDetection", "✅ Last event was OPENED - safe to log CLOSED")
 
               // ✅ Now log as CLOSED to activity logs (database)
               val timestamp = SimpleDateFormat("dd MMM yyyy, HH:mm:ss", Locale.getDefault())
