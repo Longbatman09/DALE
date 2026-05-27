@@ -84,3 +84,6 @@ References/              # Reference code (material-components-android)
 
 ## Credits
  **B.Vishal Chandrakanth** - Solo developer (Founder of Coco Copi Developers)
+
+**This project is source-available.
+Unauthorized redistribution or republishing is prohibited.**
